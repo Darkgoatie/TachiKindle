@@ -1,0 +1,10 @@
+build/
+*.o
+*.a
+extension/bin/comicink
+comicink
+tests/fixtures/*.cbz
+tests/fixtures/library/
+third_party/*/
+!third_party/stb/
+*.log
