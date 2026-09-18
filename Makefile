@@ -16,6 +16,15 @@ tachikindle: $(SRCS)
 clean:
 	rm -f tachikindle
 
+package: tachikindle
+	rm -rf build/pkg
+	mkdir -p build/pkg/tachikindle
+	cp tachikindle build/pkg/tachikindle/tachikindle
+	chmod +x build/pkg/tachikindle/tachikindle
+	cp extension/TachiKindle.sh build/pkg/documents_TachiKindle.sh
+	@echo "Copy build/pkg/tachikindle/ to /mnt/us/tachikindle/"
+	@echo "Copy build/pkg/documents_TachiKindle.sh to /mnt/us/documents/TachiKindle.sh"
+
 HOSTCC = gcc
 HOSTCFLAGS = -std=gnu11 -g -O0 -Wall -Wextra -Isrc -Itests -Ithird_party/stb
 
