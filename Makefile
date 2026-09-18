@@ -19,11 +19,13 @@ clean:
 HOSTCC = gcc
 HOSTCFLAGS = -std=gnu11 -g -O0 -Wall -Wextra -Isrc -Itests -Ithird_party/stb
 
-test: test_progress test_archive test_library test_image
+test: test_progress test_archive test_library test_image test_navigation test_reader_load
 	./test_progress
 	./test_archive
 	./test_library
 	./test_image
+	./test_navigation
+	./test_reader_load
 
 test_archive: tests/test_archive.c src/archive.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lzip
