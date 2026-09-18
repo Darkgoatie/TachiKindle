@@ -20,6 +20,9 @@ test: test_progress test_archive test_library test_image
 	./test_library
 	./test_image
 
+test_archive: tests/test_archive.c src/archive.c
+	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lzip
+
 test_%: tests/test_%.c src/%.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ $(HOSTLIBS)
 
