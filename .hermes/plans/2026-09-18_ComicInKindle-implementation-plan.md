@@ -160,7 +160,13 @@ git add -A && git commit -m "initial repo skeleton"
 
 **Objective:** Lock the ABI before writing any code, because it is expensive to change later.
 
-**Confirmed:** Kindle Paperwhite 11th gen, FW 5.19.2, `kindlehf` triple (`arm-kindlehf-linux-gnueabihf`), flags `-march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard -mthumb`. Screen resolution to confirm on-device with `eips -i` or `cat /proc/eink_fb0/screen_info` once SSH is up — expected 300dpi, 1236x1648 class panel for this model (verify, don't assume — 11th-gen basic vs PW panels differ).
+**Confirmed:** Kindle Paperwhite 11th gen, FW 5.19.2 (board `malbec_bellatrix`), kernel 4.9.77-lab126, `kindlehf` triple (`arm-kindlehf-linux-gnueabihf`), flags `-march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard -mthumb`.
+
+**Screen (confirmed via `eips -i` over SSH, 2026-09-18):** 1236x1648 @ 298.99dpi, 8bpp grayscale, MONO10 packed pixels, `line_length` 1248 (padded), rotate=3. This is the resolution to target for all UI layout in Phase 3.
+
+**SSH access confirmed working:** via KOReader's built-in SSH server (port 2222, key-based auth only — no password). Device reachable over WiFi at a DHCP-leased IP (check via `;711` on-device each session, it is not static). Key pair generated at `~/.ssh/kindle_ed25519`, public key placed in `/mnt/us/koreader/settings/SSH/authorized_keys`. usbnetlite/USBNetwork were abandoned as a dead end for this device (see below) — KOReader's SSH server is the actual working path.
+
+**Important — Windows network profile gotcha:** this network's WiFi profile was set to "Public" in Windows, which silently blocks outbound LAN connections (ping, SSH) to other devices on the same subnet, including the Kindle, even though both devices show valid ARP entries. Fixed via (elevated PowerShell): `Set-NetConnectionProfile -Name "<profile>" -NetworkCategory Private`. If SSH/ping to the Kindle mysteriously stops working again after a network change, check this first before assuming a device-side problem.
 
 **Record in README.md under "Target":**
 
@@ -850,14 +856,15 @@ No zip-and-merge dance like KUAL needed — two folders, one file, straight USB 
 
 **Files:** `tools/deploy.sh`
 
-USBNetwork ships pre-installed on this jailbreak stack. On the Kindle, type `;un` in the search bar to start it (assigns `192.168.15.244` — the KindleModding-stack default; some builds use `192.168.2.2`, confirm on first connect) and `;uns` to stop it. No package install needed.
+SSH access is via KOReader's built-in SSH server (port 2222, key auth only). The Kindle's IP is DHCP-leased and not fixed — check `;711` on-device each session and export `KINDLE_IP` accordingly. USBNetwork/usbnetlite were tried and abandoned for this device (MRPI, which they depend on, is not present on the `hdnext` stack) — WiFi + KOReader's SSH server is the actual working path.
 
 ```sh
 #!/bin/sh
-KINDLE_IP="${KINDLE_IP:-192.168.15.244}"
+KINDLE_IP="${KINDLE_IP:?set KINDLE_IP to the current value from ;711 on-device}"
+KEY="${HOME}/.ssh/kindle_ed25519"
 make || exit 1
-scp comicink root@"$KINDLE_IP":/mnt/us/comicink/bin/comicink
-ssh root@"$KINDLE_IP" 'chmod +x /mnt/us/comicink/bin/comicink'
+scp -i "$KEY" -P 2222 comicink root@"$KINDLE_IP":/mnt/us/comicink/bin/comicink
+ssh -i "$KEY" -p 2222 root@"$KINDLE_IP" 'chmod +x /mnt/us/comicink/bin/comicink'
 echo "deployed"
 ```
 
