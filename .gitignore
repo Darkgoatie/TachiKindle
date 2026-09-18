@@ -3,6 +3,12 @@ build/
 *.a
 extension/bin/tachikindle
 tachikindle
+test_progress
+test_archive
+test_library
+test_image
+test_navigation
+test_reader_load
 tests/fixtures/*.cbz
 tests/fixtures/library/
 third_party/stb/*
