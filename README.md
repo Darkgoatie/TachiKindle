@@ -9,6 +9,9 @@ Firmware: 5.19.2 (kernel 4.9.77-lab126, armv7l)
 Jailbreak: SpringBreak v1.3.7 (KindleModding hdnext stack)
 Toolchain: kindlehf (arm-kindlehf-linux-gnueabihf), built in WSL2 Ubuntu 26.04
 Screen: 1236x1648 @ 298.99dpi, 8bpp grayscale, MONO10
+Framebuffer: /dev/fb0 double-buffers (yres_virtual=3296=2x1648); when
+reading it raw (screenshots), only take the first 1248*1648 bytes
+(one page) via `dd bs=1248 count=1648`, or the capture is garbled/doubled.
 Launcher: Scriptlet (SH_Integration) — KUAL is obsolete on this stack, not used
 UI stop/start: `stop lab126_gui` / `start lab126_gui` — `/etc/init.d/framework`
 does not exist on this firmware, don't rely on it as primary.
@@ -52,6 +55,27 @@ FBInk source: `https://github.com/KindleModding/FBInk` (their fork, kept
 in sync with this jailbreak stack — vendored as a submodule at
 `third_party/FBInk`, built with `make kindle` inside WSL).
 
+libzip is cross-compiled (not vendored as a submodule) into
+`/root/sysroot-kindlehf` inside WSL, following `toolchain-kindle.cmake`
+at the repo root:
+```
+# zlib first (libzip depends on it), then libzip itself:
+CC=arm-kindlehf-linux-gnueabihf-gcc AR=arm-kindlehf-linux-gnueabihf-ar \
+  ./configure --static --prefix=/root/sysroot-kindlehf   # in zlib source dir
+make && make install
+
+cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/repo/toolchain-kindle.cmake \
+  -DCMAKE_INSTALL_PREFIX=/root/sysroot-kindlehf \
+  -DBUILD_SHARED_LIBS=OFF -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF \
+  -DENABLE_OPENSSL=OFF -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF \
+  -DZLIB_LIBRARY=/root/sysroot-kindlehf/lib/libz.a -DZLIB_INCLUDE_DIR=/root/sysroot-kindlehf/include
+make && make install   # in libzip source dir
+```
+The Makefile's `SYSROOT` variable points at `/root/sysroot-kindlehf` --
+this is WSL-local and will need rebuilding if the WSL instance is ever
+recreated (it is not part of this repo, deliberately, since it's build
+output, not source).
+
 ## Status
 
 Phase 0 complete and verified end-to-end on real hardware (2026-09-19):
@@ -67,7 +91,34 @@ scanner (series/chapter discovery), image pipeline (stb_image decode,
 aspect-fit scaling, Rec.709 grayscale, 16-level ordered dither). 21/21
 tests passing (`make test`).
 
-Next: Phase 2 (framebuffer + input device layer, needs the Kindle).
+Phase 2 complete (2026-09-19): framebuffer wrapper (fb.c, FBInk-backed,
+DU/GC16 refresh policy with periodic flash), evdev input (auto-detects
+the touchscreen node, protocol B multitouch, tap/swipe classification),
+widget primitives, and logging. Verified on device via a smoke test that
+drew a list and correctly timed out waiting for touch.
+
+Phase 3 complete (2026-09-19): the actual app — state machine (app.c),
+library screen, chapter list (progress markers), and reader (tap-third
+navigation, zoom modes, progress autosave, chapter auto-advance). Real
+gcc integration tests (`test_navigation`, `test_reader_load`) verify
+screen transitions and the archive->decode->grayscale chain without
+hardware; the full binary was also deployed and run on the real Kindle,
+confirmed opening a real CBZ and drawing a decoded page to the e-ink
+screen (log-verified since it ran headless over SSH).
+
+Phase 4 complete (2026-09-19): Scriptlet packaging via SH_Integration
+(`extension/TachiKindle.sh` + `make package`). Verified on device: the
+scriptlet stops lab126_gui, runs the binary, restores the UI on normal
+exit AND on SIGTERM/SIGINT (confirmed by killing the wrapper mid-run and
+checking the binary died + lab126_gui came back).
+
+Phase 5 in progress: `tools/deploy.sh` (scp+chmod) and `tools/grab.sh`
+(screenshot via raw /dev/fb0 read + ImageMagick, run from WSL) both
+verified working — grab.sh caught a real bug (fb double-buffering) and
+produced a correct screenshot of the live library screen showing the
+"Demo" test series.
+
+Next: Phase 6 (hardening: crash safety, memory ceiling, perf, battery).
 
 ## Layout
 
