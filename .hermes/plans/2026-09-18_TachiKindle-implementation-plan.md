@@ -1,10 +1,10 @@
-# ComicInKindle — Implementation Plan
+# TachiKindle — Implementation Plan
 
 > **For Hermes:** Use subagent-driven-development to implement this plan task-by-task.
 
 **Goal:** A Tachiyomi-style manga/comic reader that launches from KUAL on a jailbroken Kindle — browse a local library, open CBZ/CBR/PDF series, read page-by-page with e-ink-appropriate rendering, and resume where you left off.
 
-**Architecture:** A single statically-linked ARM binary written in C. It takes over the framebuffer via FBInk, reads touch/key input from Linux evdev, and is launched by a **Scriptlet** (a `.sh` file dropped in `/mnt/us/documents/`, indexed as a book by SH_Integration) that stops the Kindle UI first. All state (library index, reading progress) lives in flat files under `/mnt/us/comicink/`. No Java, no Kindlet, no network in v1.
+**Architecture:** A single statically-linked ARM binary written in C. It takes over the framebuffer via FBInk, reads touch/key input from Linux evdev, and is launched by a **Scriptlet** (a `.sh` file dropped in `/mnt/us/documents/`, indexed as a book by SH_Integration) that stops the Kindle UI first. All state (library index, reading progress) lives in flat files under `/mnt/us/tachikindle/`. No Java, no Kindlet, no network in v1.
 
 **Tech Stack:** C11 · FBInk (rendering + EPDC refresh control) · libzip (CBZ) · stb_image (JPEG/PNG decode) · Linux evdev (input) · KindleModding's `koxtoolchain` fork (`kindlehf` for FW ≥ 5.16.3, hard-float) · Make
 
@@ -14,7 +14,7 @@
 
 ## 1. Current Context & Assumptions
 
-**Repo state:** `C:\Users\halit\Desktop\Projects\ComicInKindle` contains only an empty `IDEA.md.txt`. No git repo yet.
+**Repo state:** `C:\Users\halit\Desktop\Projects\TachiKindle` contains only an empty `IDEA.md.txt`. No git repo yet.
 
 **Assumptions that must be confirmed before Phase 0 (see Open Questions):**
 - Target device is a Kindle on FW ≥ 5.16.3 (hard-float → `kindlehf` toolchain). If the device is older, swap to `kindlepw2` (soft-float) — this changes the toolchain triple and ABI flags but nothing above the build layer.
@@ -30,7 +30,7 @@
 ## 2. Scope
 
 ### In scope for v1.0
-- Local library scan of `/mnt/us/comicink/library/`
+- Local library scan of `/mnt/us/tachikindle/library/`
 - CBZ (zip) and plain image-folder series; CBR deferred
 - Grid library view with cover thumbnails
 - Chapter list per series
@@ -51,7 +51,7 @@
 ## 3. Directory Layout
 
 ```
-ComicInKindle/
+TachiKindle/
 ├── Makefile
 ├── README.md
 ├── IDEA.md
@@ -74,7 +74,7 @@ ComicInKindle/
 │   ├── libzip/             # submodule or vendored
 │   └── stb/                # stb_image.h, stb_image_resize2.h
 ├── extension/              # the Scriptlet, copied in by `make package`
-│   └── ComicInKindle.sh    # single .sh file — metadata is comment headers, no manifest needed
+│   └── TachiKindle.sh    # single .sh file — metadata is comment headers, no manifest needed
 ├── tests/
 │   ├── test_archive.c
 │   ├── test_library.c
@@ -95,7 +95,7 @@ ComicInKindle/
 ## 4. On-Device Layout
 
 ```
-/mnt/us/comicink/
+/mnt/us/tachikindle/
 ├── library/
 │   ├── Berserk/
 │   │   ├── cover.jpg              (optional; else first page of ch 1)
@@ -106,14 +106,14 @@ ComicInKindle/
 │           ├── 001.jpg
 │           └── 002.jpg
 ├── bin/
-│   └── comicink                   (the built binary)
+│   └── tachikindle                   (the built binary)
 ├── cache/
 │   └── thumbs/<hash>.raw          (pre-scaled 8bpp grayscale thumbnails)
 ├── progress.tsv                   (series<TAB>chapter<TAB>page<TAB>mtime)
 ├── config.cfg
-└── comicink.log
+└── tachikindle.log
 
-/mnt/us/documents/ComicInKindle.sh   (the Scriptlet — appears as a book, launches everything)
+/mnt/us/documents/TachiKindle.sh   (the Scriptlet — appears as a book, launches everything)
 ```
 
 `/mnt/us` is the USB-visible partition, so the user drags CBZ files in over USB with no SSH needed. This is the whole distribution story — do not put content anywhere else.
@@ -129,7 +129,7 @@ ComicInKindle/
 **Step 1:** Run
 
 ```bash
-cd /c/Users/halit/Desktop/Projects/ComicInKindle
+cd /c/Users/halit/Desktop/Projects/TachiKindle
 git init
 mv IDEA.md.txt IDEA.md
 ```
@@ -140,7 +140,7 @@ mv IDEA.md.txt IDEA.md
 build/
 *.o
 *.a
-extension/bin/comicink
+extension/bin/tachikindle
 tests/fixtures/*.cbz
 third_party/*/
 !third_party/stb/
@@ -289,7 +289,7 @@ int main(void) {
     if (fbfd < 0) { fprintf(stderr, "fbink_open failed\n"); return 1; }
     if (fbink_init(fbfd, &cfg) < 0) { fprintf(stderr, "fbink_init failed\n"); return 1; }
 
-    fbink_print(fbfd, "ComicInKindle: hello", &cfg);
+    fbink_print(fbfd, "TachiKindle: hello", &cfg);
     sleep(5);
 
     cfg.is_cleared = true;
@@ -309,18 +309,18 @@ CFLAGS   = -std=gnu11 -O2 -Wall -Wextra -I$(FBINK)
 LDFLAGS  = -static
 LDLIBS   = $(FBINK)/Release/libfbink.a -lm
 
-comicink: src/main.c
+tachikindle: src/main.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS) $(LDFLAGS)
 
 clean:
-	rm -f comicink
+	rm -f tachikindle
 ```
 
 **Step 3:** Build and check:
 
 ```bash
 make
-file comicink
+file tachikindle
 ```
 
 **Expected:** statically linked ARM ELF.
@@ -328,13 +328,13 @@ file comicink
 **Step 4:** Deploy and run on device:
 
 ```bash
-scp -i ~/.ssh/kindle_ed25519 -P 2222 comicink root@<kindle-ip>:/mnt/us/
-ssh -i ~/.ssh/kindle_ed25519 -p 2222 root@<kindle-ip> 'stop lab126_gui; /mnt/us/comicink; start lab126_gui'
+scp -i ~/.ssh/kindle_ed25519 -P 2222 tachikindle root@<kindle-ip>:/mnt/us/
+ssh -i ~/.ssh/kindle_ed25519 -p 2222 root@<kindle-ip> 'stop lab126_gui; /mnt/us/tachikindle; start lab126_gui'
 ```
 
 **Confirmed on this device (2026-09-19):** `/etc/init.d/framework` does NOT exist on this firmware — use `stop lab126_gui` / `start lab126_gui` directly (both are real binaries at `/sbin/stop`, `/sbin/start`, Upstart-style). The plan's launcher scripts already have this as a fallback branch; on this specific device the fallback is actually the primary path, not `/etc/init.d/framework`.
 
-**Verified end-to-end 2026-09-19:** cross-compiled `comicink` (the Task 0.5 hello-world) built clean in WSL2 with the `kindlehf` toolchain and `libfbink.a`, deployed over SSH, ran on the real device — `lab126_gui` stopped, text drew centered on the actual e-ink screen, framework restarted cleanly. Full toolchain verified working.
+**Verified end-to-end 2026-09-19:** cross-compiled `tachikindle` (the Task 0.5 hello-world) built clean in WSL2 with the `kindlehf` toolchain and `libfbink.a`, deployed over SSH, ran on the real device — `lab126_gui` stopped, text drew centered on the actual e-ink screen, framework restarted cleanly. Full toolchain verified working.
 
 **Step 5:** Commit.
 
@@ -781,19 +781,19 @@ Two modes only. `fit-page` (default) and `fit-width` (panning vertically with sw
 
 ### Task 4.1: Write the launcher scriptlet
 
-**Files:** `extension/ComicInKindle.sh` (this file is what ships — no config.xml, no menu.json)
+**Files:** `extension/TachiKindle.sh` (this file is what ships — no config.xml, no menu.json)
 
 Metadata is plain comment lines at the top of the file, read by SH_Integration:
 
 ```sh
 #!/bin/sh
-# Name: ComicInKindle
+# Name: TachiKindle
 # Author: Halit
 # DontUseFBInk
 
-EXTDIR="/mnt/us/comicink"
-BIN="$EXTDIR/bin/comicink"
-LOG="$EXTDIR/comicink.log"
+EXTDIR="/mnt/us/tachikindle"
+BIN="$EXTDIR/bin/tachikindle"
+LOG="$EXTDIR/tachikindle.log"
 
 mkdir -p "$EXTDIR/library" "$EXTDIR/cache/thumbs" "$EXTDIR/bin"
 
@@ -825,7 +825,7 @@ exit $RC
 
 **Non-negotiable, unchanged from the old plan:** the framework restart must run even if the binary segfaults — `$?` is captured and the restart is unconditional. Consider a `trap` on TERM/INT too, so killing the scriptlet from the terminal still restores the UI.
 
-**Verification:** copy `ComicInKindle.sh` alone (with just an `echo hi` body, no binary yet) into `/mnt/us/documents/`, confirm it appears in the Kindle library as "ComicInKindle" by "Halit", tap it, confirm it runs.
+**Verification:** copy `TachiKindle.sh` alone (with just an `echo hi` body, no binary yet) into `/mnt/us/documents/`, confirm it appears in the Kindle library as "TachiKindle" by "Halit", tap it, confirm it runs.
 
 ---
 
@@ -834,23 +834,23 @@ exit $RC
 **Files:** Makefile addition
 
 ```make
-package: comicink
+package: tachikindle
 	rm -rf build/pkg
-	mkdir -p build/pkg/comicink/bin
-	cp comicink build/pkg/comicink/bin/
-	chmod +x build/pkg/comicink/bin/comicink
-	cp extension/ComicInKindle.sh build/pkg/documents_ComicInKindle.sh
-	@echo "Copy build/pkg/comicink/ to /mnt/us/comicink/"
-	@echo "Copy build/pkg/documents_ComicInKindle.sh to /mnt/us/documents/ComicInKindle.sh"
+	mkdir -p build/pkg/tachikindle/bin
+	cp tachikindle build/pkg/tachikindle/bin/
+	chmod +x build/pkg/tachikindle/bin/tachikindle
+	cp extension/TachiKindle.sh build/pkg/documents_TachiKindle.sh
+	@echo "Copy build/pkg/tachikindle/ to /mnt/us/tachikindle/"
+	@echo "Copy build/pkg/documents_TachiKindle.sh to /mnt/us/documents/TachiKindle.sh"
 ```
 
 No zip-and-merge dance like KUAL needed — two folders, one file, straight USB drag-and-drop. Document this exactly in the README since it is the entire install story now.
 
 **Install instruction for the README:**
 1. Connect Kindle via USB (or `scp` over USBNetwork, see Phase 5)
-2. Copy `build/pkg/comicink/` to the Kindle root as `/mnt/us/comicink/`
-3. Copy `build/pkg/documents_ComicInKindle.sh` to `/mnt/us/documents/ComicInKindle.sh`
-4. Eject, wait for the library to refresh, tap "ComicInKindle"
+2. Copy `build/pkg/tachikindle/` to the Kindle root as `/mnt/us/tachikindle/`
+3. Copy `build/pkg/documents_TachiKindle.sh` to `/mnt/us/documents/TachiKindle.sh`
+4. Eject, wait for the library to refresh, tap "TachiKindle"
 
 ---
 
@@ -867,8 +867,8 @@ SSH access is via KOReader's built-in SSH server (port 2222, key auth only). The
 KINDLE_IP="${KINDLE_IP:?set KINDLE_IP to the current value from ;711 on-device}"
 KEY="${HOME}/.ssh/kindle_ed25519"
 make || exit 1
-scp -i "$KEY" -P 2222 comicink root@"$KINDLE_IP":/mnt/us/comicink/bin/comicink
-ssh -i "$KEY" -p 2222 root@"$KINDLE_IP" 'chmod +x /mnt/us/comicink/bin/comicink'
+scp -i "$KEY" -P 2222 tachikindle root@"$KINDLE_IP":/mnt/us/tachikindle/bin/tachikindle
+ssh -i "$KEY" -p 2222 root@"$KINDLE_IP" 'chmod +x /mnt/us/tachikindle/bin/tachikindle'
 echo "deployed"
 ```
 
@@ -923,7 +923,7 @@ A design that looks fine on an RGB monitor and terrible at 16 grays is the defau
 ## Phase 7 — Release
 
 - `README.md`: install steps, supported devices, the library folder layout, how to get out if something hangs
-- Tag `v1.0`, attach `comicink-1.0.zip`
+- Tag `v1.0`, attach `tachikindle-1.0.zip`
 - Known-issues list, honestly written
 
 ---

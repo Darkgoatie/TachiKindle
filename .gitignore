@@ -1,8 +1,8 @@
 build/
 *.o
 *.a
-extension/bin/comicink
-comicink
+extension/bin/tachikindle
+tachikindle
 tests/fixtures/*.cbz
 tests/fixtures/library/
 third_party/stb/*

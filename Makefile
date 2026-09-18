@@ -5,8 +5,8 @@ CFLAGS   = -std=gnu11 -O2 -Wall -Wextra -I$(FBINK)
 LDFLAGS  = -static
 LDLIBS   = $(FBINK)/Release/libfbink.a -lm
 
-comicink: src/main.c
+tachikindle: src/main.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS) $(LDFLAGS)
 
 clean:
-	rm -f comicink
+	rm -f tachikindle

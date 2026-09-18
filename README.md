@@ -1,4 +1,4 @@
-# ComicInKindle
+# TachiKindle
 
 A Tachiyomi-style manga/comic reader for jailbroken Kindles.
 
@@ -42,7 +42,7 @@ targets Linux.
 ```
 wsl -d Ubuntu
 export PATH="$HOME/x-tools/arm-kindlehf-linux-gnueabihf/bin:$PATH"
-cd /mnt/c/Users/halit/Desktop/Projects/ComicInKindle
+cd /mnt/c/Users/halit/Desktop/Projects/TachiKindle
 make
 ```
 
@@ -56,7 +56,7 @@ in sync with this jailbreak stack — vendored as a submodule at
 
 Phase 0 complete and verified end-to-end on real hardware (2026-09-19):
 cross-compiled a static ARM binary in WSL2, deployed it over SSH, it
-stopped the Kindle UI, drew "ComicInKindle: hello" on the actual e-ink
+stopped the Kindle UI, drew "TachiKindle: hello" on the actual e-ink
 screen via FBInk, and the UI restarted cleanly. Toolchain, FBInk, SSH
 access, and the stop/start UI lifecycle are all confirmed working.
 
@@ -65,5 +65,5 @@ no device needed).
 
 ## Layout
 
-See the implementation plan in `.hermes/plans/2026-09-18_ComicInKindle-implementation-plan.md`
+See the implementation plan in `.hermes/plans/2026-09-18_TachiKindle-implementation-plan.md`
 for full directory structure, phase breakdown, and task list.

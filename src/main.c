@@ -12,7 +12,7 @@ int main(void) {
     if (fbfd < 0) { fprintf(stderr, "fbink_open failed\n"); return 1; }
     if (fbink_init(fbfd, &cfg) < 0) { fprintf(stderr, "fbink_init failed\n"); return 1; }
 
-    fbink_print(fbfd, "ComicInKindle: hello", &cfg);
+    fbink_print(fbfd, "TachiKindle: hello", &cfg);
     sleep(5);
 
     cfg.is_cleared = true;
