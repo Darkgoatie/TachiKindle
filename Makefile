@@ -10,3 +10,18 @@ tachikindle: src/main.c
 
 clean:
 	rm -f tachikindle
+
+HOSTCC = gcc
+HOSTCFLAGS = -std=gnu11 -g -O0 -Wall -Wextra -Isrc -Itests -Ithird_party/stb
+
+test: test_progress test_archive test_library test_image
+	./test_progress
+	./test_archive
+	./test_library
+	./test_image
+
+test_%: tests/test_%.c src/%.c
+	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ $(HOSTLIBS)
+
+clean-tests:
+	rm -f test_progress test_archive test_library test_image
