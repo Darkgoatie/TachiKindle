@@ -49,7 +49,8 @@ static int dir_has_any_regular_file(const char *path) {
     while ((ent = readdir(d)) != NULL) {
         if (ent->d_name[0] == '.') continue;
         char full[4096];
-        snprintf(full, sizeof(full), "%s/%s", path, ent->d_name);
+        int n = snprintf(full, sizeof(full), "%s/%s", path, ent->d_name);
+        if (n < 0 || (size_t)n >= sizeof(full)) continue; /* path too long, skip */
         struct stat st;
         if (stat(full, &st) == 0 && S_ISREG(st.st_mode)) { found = 1; break; }
     }
@@ -66,7 +67,8 @@ static void scan_series(series_t *s, const char *series_path) {
         while ((ent = readdir(d)) != NULL) {
             if (ent->d_name[0] == '.') continue;
             char full[4096];
-            snprintf(full, sizeof(full), "%s/%s", series_path, ent->d_name);
+            int fn = snprintf(full, sizeof(full), "%s/%s", series_path, ent->d_name);
+            if (fn < 0 || (size_t)fn >= sizeof(full)) continue;
             struct stat st;
             if (stat(full, &st) != 0) continue;
 
@@ -109,7 +111,8 @@ int library_scan(library_t *lib, const char *root) {
     while ((ent = readdir(d)) != NULL) {
         if (ent->d_name[0] == '.') continue;
         char full[4096];
-        snprintf(full, sizeof(full), "%s/%s", root, ent->d_name);
+        int fn = snprintf(full, sizeof(full), "%s/%s", root, ent->d_name);
+        if (fn < 0 || (size_t)fn >= sizeof(full)) continue;
         struct stat st;
         if (stat(full, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
 

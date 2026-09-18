@@ -1,12 +1,17 @@
 CROSS   ?= arm-kindlehf-linux-gnueabihf-
 CC       = $(CROSS)gcc
 FBINK    = third_party/FBInk
-CFLAGS   = -std=gnu11 -O2 -Wall -Wextra -I$(FBINK)
-LDFLAGS  = -static
-LDLIBS   = $(FBINK)/Release/libfbink.a -lm
+SYSROOT  = /root/sysroot-kindlehf
+CFLAGS   = -std=gnu11 -O2 -Wall -Wextra -Isrc -I$(FBINK) -Ithird_party/stb -I$(SYSROOT)/include
+LDFLAGS  = -static -L$(SYSROOT)/lib
+LDLIBS   = $(FBINK)/Release/libfbink.a -lzip -lz -lm
 
-tachikindle: src/main.c
-	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS) $(LDFLAGS)
+SRCS = src/main.c src/app.c src/fb.c src/input.c src/widget.c src/log.c \
+       src/library.c src/progress.c src/archive.c src/image.c \
+       src/ui_library.c src/ui_chapters.c src/ui_reader.c
+
+tachikindle: $(SRCS)
+	$(CC) $(CFLAGS) $(SRCS) -o $@ $(LDLIBS) $(LDFLAGS)
 
 clean:
 	rm -f tachikindle
@@ -25,6 +30,12 @@ test_archive: tests/test_archive.c src/archive.c
 
 test_image: tests/test_image.c src/image.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lm
+
+test_navigation: tests/test_navigation.c tests/fb_stub.c src/app.c src/library.c src/progress.c src/archive.c src/ui_library.c src/ui_chapters.c src/ui_reader.c src/image.c src/widget.c src/log.c src/input.c
+	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lzip -lm
+
+test_reader_load: tests/test_reader_load.c src/archive.c src/image.c
+	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lzip -lm
 
 test_%: tests/test_%.c src/%.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ $(HOSTLIBS)
