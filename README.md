@@ -60,8 +60,14 @@ stopped the Kindle UI, drew "TachiKindle: hello" on the actual e-ink
 screen via FBInk, and the UI restarted cleanly. Toolchain, FBInk, SSH
 access, and the stop/start UI lifecycle are all confirmed working.
 
-Next: Phase 1 (host-side core: archive/library/progress/image, TDD,
-no device needed).
+Phase 1 complete (2026-09-19): host-side core built and TDD'd with plain
+gcc inside WSL2 (no device needed) — progress store (atomic save, tolerant
+load), CBZ archive reader (natural sort, exclusion rules, libzip), library
+scanner (series/chapter discovery), image pipeline (stb_image decode,
+aspect-fit scaling, Rec.709 grayscale, 16-level ordered dither). 21/21
+tests passing (`make test`).
+
+Next: Phase 2 (framebuffer + input device layer, needs the Kindle).
 
 ## Layout
 
