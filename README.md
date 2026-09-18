@@ -120,6 +120,18 @@ produced a correct screenshot of the live library screen showing the
 
 Next: Phase 6 (hardening: crash safety, memory ceiling, perf, battery).
 
+Phase 6 complete (2026-09-19): signal handlers (SIGSEGV/SIGBUS/SIGTERM)
+in signals.c shut down the framebuffer cleanly on a fatal crash, on top
+of the launcher scriptlet's own trap (belt-and-suspenders, verified in
+Phase 4). image_decode() now rejects images over 40 megapixels via
+stb_image's header-only info parse before committing to a full decode,
+protecting the device's limited RAM against a pathological source file.
+Measured on real hardware with a synthetic 500-chapter (20 series x 25
+chapters) library: cold scan in 7.7ms (target was under 2s), ~4.7MB peak
+RSS with the library loaded and drawn, and under 1% CPU sampled over 3s
+of idle event-loop time (confirms input_poll's select() actually blocks
+rather than busy-waiting). No index caching was needed at this scale.
+
 ## Layout
 
 See the implementation plan in `.hermes/plans/2026-09-18_TachiKindle-implementation-plan.md`

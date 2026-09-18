@@ -8,7 +8,7 @@ LDLIBS   = $(FBINK)/Release/libfbink.a -lzip -lz -lm
 
 SRCS = src/main.c src/app.c src/fb.c src/input.c src/widget.c src/log.c \
        src/library.c src/progress.c src/archive.c src/image.c \
-       src/ui_library.c src/ui_chapters.c src/ui_reader.c
+       src/ui_library.c src/ui_chapters.c src/ui_reader.c src/signals.c
 
 tachikindle: $(SRCS)
 	$(CC) $(CFLAGS) $(SRCS) -o $@ $(LDLIBS) $(LDFLAGS)
@@ -27,6 +27,9 @@ package: tachikindle
 
 HOSTCC = gcc
 HOSTCFLAGS = -std=gnu11 -g -O0 -Wall -Wextra -Isrc -Itests -Ithird_party/stb
+
+perf_scan: tools/perf_scan.c src/library.c
+	$(HOSTCC) -std=gnu11 -O2 -Isrc $^ -o $@
 
 test: test_progress test_archive test_library test_image test_navigation test_reader_load
 	./test_progress

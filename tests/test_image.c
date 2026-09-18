@@ -54,10 +54,29 @@ static void test_decode_garbage_returns_null(void) {
     mu_assert("null on garbage", out == NULL);
 }
 
+static void test_decode_rejects_oversized_image(void) {
+    /* A hand-built PNG IHDR claiming an absurd 50000x50000 size, no
+       actual pixel data needed since stbi_info_from_memory only reads
+       the header -- this must be rejected before any allocation for
+       the full (2.5-gigapixel) decode is attempted. */
+    unsigned char png[] = {
+        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+        0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R',
+        0x00, 0x00, 0xC3, 0x50, /* width  = 50000 */
+        0x00, 0x00, 0xC3, 0x50, /* height = 50000 */
+        0x08, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, /* crc, not validated by stbi_info */
+    };
+    int w, h, ch;
+    unsigned char *out = image_decode(png, sizeof(png), &w, &h, &ch);
+    mu_assert("oversized image rejected", out == NULL);
+}
+
 MU_MAIN_BEGIN
     mu_run(test_scale_preserves_aspect);
     mu_run(test_scale_preserves_aspect_height_limited);
     mu_run(test_grayscale_is_8bpp);
     mu_run(test_dither_only_16_levels);
     mu_run(test_decode_garbage_returns_null);
+    mu_run(test_decode_rejects_oversized_image);
 MU_MAIN_END

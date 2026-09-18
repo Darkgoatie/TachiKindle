@@ -3,10 +3,12 @@
 #include "input.h"
 #include "log.h"
 #include "ui_library.h"
+#include "signals.h"
 
 int main(void) {
     log_init("/mnt/us/tachikindle/tachikindle.log");
     log_msg("starting");
+    signals_install();
 
     if (fb_init() != 0) {
         log_msg("fb_init failed");

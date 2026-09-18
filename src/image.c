@@ -4,9 +4,24 @@
 #include "image.h"
 #include <stdlib.h>
 
+/* Refuse to decode/allocate for absurdly large source images. A
+   megapixel ceiling protects the ~15-32MB total RAM budget on these
+   devices far better than discovering the hard way that a stray
+   20000x20000 scan in someone's library OOM-kills the whole app. 40MP
+   is generous headroom above any real manga scan (a 4800dpi A4 page is
+   still well under 10MP) while catching pathological inputs. */
+#define IMAGE_MAX_MEGAPIXELS 40
+#define IMAGE_MAX_PIXELS ((long long)IMAGE_MAX_MEGAPIXELS * 1000000LL)
+
 unsigned char *image_decode(const unsigned char *buf, size_t size,
                              int *out_w, int *out_h, int *out_channels) {
     int w, h, ch;
+    /* stb_image can report dimensions without a full decode via a
+       lightweight header parse; use that to reject oversized images
+       before committing to the actual (much more expensive) decode. */
+    if (!stbi_info_from_memory(buf, (int)size, &w, &h, &ch)) return NULL;
+    if ((long long)w * (long long)h > IMAGE_MAX_PIXELS) return NULL;
+
     unsigned char *pixels = stbi_load_from_memory(buf, (int)size, &w, &h, &ch, 0);
     if (!pixels) return NULL;
     *out_w = w;

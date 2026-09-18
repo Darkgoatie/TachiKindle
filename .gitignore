@@ -3,6 +3,7 @@ build/
 *.a
 extension/bin/tachikindle
 tachikindle
+perf_scan
 test_progress
 test_archive
 test_library
