@@ -7,4 +7,5 @@ tests/fixtures/*.cbz
 tests/fixtures/library/
 third_party/stb/*
 !third_party/stb/*.h
+third_party/FBInk/Release/
 *.log
