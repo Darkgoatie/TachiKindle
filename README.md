@@ -7,9 +7,11 @@ A Tachiyomi-style manga/comic reader for jailbroken Kindles.
 Device: Kindle Paperwhite (11th gen), board malbec_bellatrix
 Firmware: 5.19.2 (kernel 4.9.77-lab126, armv7l)
 Jailbreak: SpringBreak v1.3.7 (KindleModding hdnext stack)
-Toolchain: kindlehf (arm-kindlehf-linux-gnueabihf)
+Toolchain: kindlehf (arm-kindlehf-linux-gnueabihf), built in WSL2 Ubuntu 26.04
 Screen: 1236x1648 @ 298.99dpi, 8bpp grayscale, MONO10
 Launcher: Scriptlet (SH_Integration) — KUAL is obsolete on this stack, not used
+UI stop/start: `stop lab126_gui` / `start lab126_gui` — `/etc/init.d/framework`
+does not exist on this firmware, don't rely on it as primary.
 
 ## Device access
 
@@ -31,11 +33,35 @@ this PC, check `Get-NetConnectionProfile` — if the WiFi profile shows
 Kindle even though both devices show valid ARP entries. Fix (elevated
 PowerShell): `Set-NetConnectionProfile -Name "<profile>" -NetworkCategory Private`
 
+## Build
+
+Cross-compiling happens in WSL2 (Ubuntu), not native Windows —
+koxtoolchain doesn't build there and KindleModding's prebuilt release
+targets Linux.
+
+```
+wsl -d Ubuntu
+export PATH="$HOME/x-tools/arm-kindlehf-linux-gnueabihf/bin:$PATH"
+cd /mnt/c/Users/halit/Desktop/Projects/ComicInKindle
+make
+```
+
+Toolchain source: `https://github.com/KindleModding/koxtoolchain` (prebuilt
+`kindlehf.tar.gz` release, extracted to `~/x-tools/` inside WSL).
+FBInk source: `https://github.com/KindleModding/FBInk` (their fork, kept
+in sync with this jailbreak stack — vendored as a submodule at
+`third_party/FBInk`, built with `make kindle` inside WSL).
+
 ## Status
 
-Planning complete, see `.hermes/plans/`. SSH device access confirmed
-working. Blocked on WSL2 finishing install for the cross-compiler
-(Task 0.3) before any code can be built.
+Phase 0 complete and verified end-to-end on real hardware (2026-09-19):
+cross-compiled a static ARM binary in WSL2, deployed it over SSH, it
+stopped the Kindle UI, drew "ComicInKindle: hello" on the actual e-ink
+screen via FBInk, and the UI restarted cleanly. Toolchain, FBInk, SSH
+access, and the stop/start UI lifecycle are all confirmed working.
+
+Next: Phase 1 (host-side core: archive/library/progress/image, TDD,
+no device needed).
 
 ## Layout
 

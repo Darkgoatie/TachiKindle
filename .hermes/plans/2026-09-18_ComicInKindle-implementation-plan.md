@@ -328,11 +328,13 @@ file comicink
 **Step 4:** Deploy and run on device:
 
 ```bash
-scp comicink root@<kindle-ip>:/mnt/us/
-ssh root@<kindle-ip> '/etc/init.d/framework stop; /mnt/us/comicink; /etc/init.d/framework start'
+scp -i ~/.ssh/kindle_ed25519 -P 2222 comicink root@<kindle-ip>:/mnt/us/
+ssh -i ~/.ssh/kindle_ed25519 -p 2222 root@<kindle-ip> 'stop lab126_gui; /mnt/us/comicink; start lab126_gui'
 ```
 
-**Expected:** The Kindle screen clears, shows "ComicInKindle: hello" centered for 5 seconds, then the normal UI comes back.
+**Confirmed on this device (2026-09-19):** `/etc/init.d/framework` does NOT exist on this firmware — use `stop lab126_gui` / `start lab126_gui` directly (both are real binaries at `/sbin/stop`, `/sbin/start`, Upstart-style). The plan's launcher scripts already have this as a fallback branch; on this specific device the fallback is actually the primary path, not `/etc/init.d/framework`.
+
+**Verified end-to-end 2026-09-19:** cross-compiled `comicink` (the Task 0.5 hello-world) built clean in WSL2 with the `kindlehf` toolchain and `libfbink.a`, deployed over SSH, ran on the real device — `lab126_gui` stopped, text drew centered on the actual e-ink screen, framework restarted cleanly. Full toolchain verified working.
 
 **Step 5:** Commit.
 
@@ -796,10 +798,12 @@ LOG="$EXTDIR/comicink.log"
 mkdir -p "$EXTDIR/library" "$EXTDIR/cache/thumbs" "$EXTDIR/bin"
 
 # Stop the Kindle UI so it stops fighting us for the framebuffer
-if [ -x /etc/init.d/framework ]; then
-    /etc/init.d/framework stop >>"$LOG" 2>&1
-else
+# Confirmed on-device (2026-09-19): /etc/init.d/framework does not exist
+# on this firmware — stop/start lab126_gui is the real path here, not a fallback.
+if command -v stop >/dev/null 2>&1 && [ -x /sbin/stop ]; then
     stop lab126_gui >>"$LOG" 2>&1
+elif [ -x /etc/init.d/framework ]; then
+    /etc/init.d/framework stop >>"$LOG" 2>&1
 fi
 
 [ -x /usr/bin/lipc-set-prop ] && lipc-set-prop com.lab126.powerd preventScreenSaver 1
