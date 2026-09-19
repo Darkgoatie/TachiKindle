@@ -186,15 +186,30 @@ end
 -- Chapter list for a manga -> { {title, url, date}, ... }, newest first
 -- as the site returns them (no re-sorting -- most theme sites already
 -- list newest-first, and re-sorting risks fighting a source that isn't).
+--
+-- WeebCentral's real chapter-list URL is /series/{seriesId}/full-chapter-list
+-- WITHOUT the trailing slug -- the manga_url scraped from search/popular
+-- includes the slug (.../series/{id}/Kagurabachi), and appending
+-- /full-chapter-list to THAT 404s (confirmed live: identical bytes to
+-- a real fetched 404 page, "manga you are looking for might have been
+-- moved or deleted"). Strip back to base_url + first two path segments
+-- before resolving this one endpoint.
 function TachiKindleSource:fetchChapterList(manga_url)
-    local url, err = self:resolveUrl("chapter_list", { manga_url = manga_url })
+    local trimmed_url = manga_url:match("^(https?://[^/]+/[^/]+/[^/]+)")  or manga_url
+    local url, err = self:resolveUrl("chapter_list", { manga_url = trimmed_url })
     if not url then return nil, err end
+    logger.info("TachiKindle: fetching chapter list from " .. tostring(url))
     local body, ferr = self:fetch(url)
-    if not body then return nil, ferr end
+    if not body then
+        logger.info("TachiKindle: chapter list fetch failed: " .. tostring(ferr))
+        return nil, ferr
+    end
+    logger.info("TachiKindle: chapter list body length " .. #body)
 
     local root = htmlparser.parse(body, 5000)
     local sel = self.def.selectors
     local items = root:select(sel.chapter_item)
+    logger.info("TachiKindle: chapter_item selector '" .. tostring(sel.chapter_item) .. "' matched " .. #items .. " items")
     local list = {}
     for _, item in ipairs(items) do
         table.insert(list, {
