@@ -1,0 +1,123 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.mangareadorg",
+  "name": "MangaReadOrg",
+  "lang": "en",
+  "base_url": "https://mangaread.org",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "theme": "madara",
+  "_todo": [
+    "Ported from keiyoushi Madara-family pattern; verify live selectors for https://mangaread.org.",
+    "Real keiyoushi Madara sources fetch popular/latest via an AJAX POST to /wp-admin/admin-ajax.php with action=madara_load_more, not simple GET pagination -- this port uses the plain GET fallback (?m_orderby=views&page=N) that older/simpler Madara sites still serve directly. If a specific site 404s on this, it needs the AJAX POST path, which this schema version doesn't support yet (no form_body/POST templating).",
+    "Some Madara sites gate chapter pages behind an AES-encrypted '#chapter-protector-data' blob (password + ciphertext, decrypted client-side in the app). This port only handles the plain <img> page-list case; protected chapters will return an empty page list, not a fabricated success.",
+    "archiveSelector in the real source is 'div.page-item-detail, .manga__item, .c-tabs-item__content' (three alternatives, first match wins per site). This schema's selectors are single-string only, so 'div.page-item-detail' (the most common variant) was picked -- swap to '.manga__item' or '.c-tabs-item__content' if a specific site uses a different one."
+  ],
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0",
+    "extra_headers": {
+      "Referer": "https://mangaread.org/"
+    }
+  },
+  "endpoints": {
+    "popular": {
+      "method": "GET",
+      "path": "/manga/?m_orderby=views&page={page}"
+    },
+    "latest": {
+      "method": "GET",
+      "path": "/manga/?m_orderby=latest&page={page}"
+    },
+    "search": {
+      "method": "GET",
+      "path": "/?s={query}&post_type=wp-manga&page={page}"
+    },
+    "manga_details": {
+      "method": "GET",
+      "path": "{manga_url}"
+    },
+    "chapter_list": {
+      "method": "GET",
+      "path": "{manga_url}"
+    },
+    "page_list": {
+      "method": "GET",
+      "path": "{chapter_url}"
+    }
+  },
+  "selectors": {
+    "manga_list_item": "div.page-item-detail",
+    "manga_title": ".post-title a",
+    "manga_url": {
+      "sel": ".post-title a",
+      "attr": "href"
+    },
+    "manga_cover": {
+      "sel": "img",
+      "attr": "data-src",
+      "fallback_attr": "src"
+    },
+    "has_next_page": "a.nextpostslink",
+    "details_title": "div.post-title h1",
+    "details_author": "div.author-content > a",
+    "details_description": "div.description-summary div.summary__content",
+    "details_status": "div.summary-content",
+    "details_genres": "div.genres-content a",
+    "details_cover": {
+      "sel": "div.summary_image img",
+      "attr": "data-src",
+      "fallback_attr": "src"
+    },
+    "chapter_item": "li.wp-manga-chapter",
+    "chapter_title": "a",
+    "chapter_url": {
+      "sel": "a",
+      "attr": "href"
+    },
+    "chapter_date": "span.chapter-release-date",
+    "page_image": {
+      "sel": "div.page-break img",
+      "attr": "data-src",
+      "fallback_attr": "src"
+    }
+  },
+  "pagination": {
+    "strategy": "has_next_selector"
+  },
+  "date_format": "MMMM dd, yyyy",
+  "filters": [
+    {
+      "type": "text",
+      "id": "author",
+      "label": "Author"
+    },
+    {
+      "type": "select",
+      "id": "status",
+      "label": "Status",
+      "options": [
+        [
+          "",
+          "Any"
+        ],
+        [
+          "end",
+          "Completed"
+        ],
+        [
+          "on-going",
+          "Ongoing"
+        ],
+        [
+          "canceled",
+          "Cancelled"
+        ],
+        [
+          "on-hold",
+          "On Hold"
+        ]
+      ]
+    }
+  ],
+  "update_strategy": "ALWAYS_UPDATE"
+}

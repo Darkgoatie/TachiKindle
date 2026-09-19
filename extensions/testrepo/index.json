@@ -1,15 +1,7 @@
 {
-  "repo_name": "TachiKindle Test Repo",
+  "repo_name": "TachiKindle Sources",
   "repo_format_version": 1,
   "extensions": [
-    {
-      "id": "en.example_madara",
-      "name": "Example (Madara)",
-      "lang": "en",
-      "version_code": 1,
-      "content_warning": "SAFE",
-      "path": "sources/en/example_madara.tkext.json"
-    },
     {
       "id": "en.weebcentral",
       "name": "Weeb Central",
@@ -17,6 +9,54 @@
       "version_code": 1,
       "content_warning": "MIXED",
       "path": "sources/en/weebcentral.tkext.json"
+    },
+    {
+      "id": "en.mangareadorg",
+      "name": "MangaReadOrg",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "SAFE",
+      "path": "sources/en/mangareadorg.tkext.json"
+    },
+    {
+      "id": "en.toonily",
+      "name": "Toonily",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "MIXED",
+      "path": "sources/en/toonily.tkext.json"
+    },
+    {
+      "id": "en.hiperdex",
+      "name": "Hiperdex",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "MIXED",
+      "path": "sources/en/hiperdex.tkext.json"
+    },
+    {
+      "id": "en.mangatx",
+      "name": "MangaTX",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "SAFE",
+      "path": "sources/en/mangatx.tkext.json"
+    },
+    {
+      "id": "en.nightscans",
+      "name": "Night Scans",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "SAFE",
+      "path": "sources/en/nightscans.tkext.json"
+    },
+    {
+      "id": "en.1stkissmanga",
+      "name": "1st Kiss Manga",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "MIXED",
+      "path": "sources/en/1stkissmanga.tkext.json"
     }
   ]
 }
