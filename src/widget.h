@@ -19,6 +19,16 @@ void widget_draw_button(const widget_button_t *btn, int selected);
 void widget_draw_list(const char **labels, int count, int selected,
                        int x, int y, int w, int h);
 
+/* Maps a tap at (tap_x, tap_y) to the list-item index actually under
+   that point, given the exact same (x, y, w, h, selected) geometry
+   passed to the widget_draw_list call that rendered it. Returns the
+   item index (0..count-1) or -1 if the tap missed every row --
+   callers must not assume "the currently selected row" is what got
+   tapped, since real screens support tap-to-select-that-row, not
+   just tap-to-activate-whatever-was-last-selected. */
+int widget_list_hit_test(int tap_x, int tap_y, int count, int selected,
+                          int x, int y, int w, int h);
+
 /* Draws a short-lived status message centered near the top; caller is
    responsible for triggering the actual screen refresh afterward. */
 void widget_toast(const char *message);

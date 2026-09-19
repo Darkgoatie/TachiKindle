@@ -66,7 +66,11 @@ void ui_repo_list_handle(app_t *app, const ci_event_t *ev) {
         case EV_SWIPE_D:
             if (app->sel_repo > 0) app->sel_repo--;
             break;
-        case EV_TAP:
+        case EV_TAP: {
+            int hit = widget_list_hit_test(ev->x, ev->y, total_rows,
+                                            app->sel_repo, 20, 20, fb_width() - 40, fb_height() - 100);
+            if (hit < 0) break;
+            app->sel_repo = hit;
             if (app->sel_repo == app->n_repos) {
                 /* "+ Add Repo" row */
                 app->url_entry[0] = '\0';
@@ -79,6 +83,7 @@ void ui_repo_list_handle(app_t *app, const ci_event_t *ev) {
                 app->screen = SCREEN_EXT_LIST;
             }
             break;
+        }
         case EV_KEY_BACK:
             app->screen = SCREEN_LIBRARY;
             break;
@@ -309,18 +314,21 @@ void ui_ext_list_handle(app_t *app, const ci_event_t *ev) {
         case EV_SWIPE_D:
             if (app->sel_ext > 0) app->sel_ext--;
             break;
-        case EV_TAP:
-            if (idx->count > 0) {
-                char dest[512];
-                snprintf(dest, sizeof(dest), "%s%s.tkext.json", EXT_DIR,
-                         idx->entries[app->sel_ext].id);
-                int rc = repo_download_extension(app->repo_urls[app->sel_repo],
-                                                  &idx->entries[app->sel_ext], dest);
-                snprintf(app->download_status, sizeof(app->download_status),
-                          rc == 0 ? "Downloaded %s" : "Failed: %s",
-                          idx->entries[app->sel_ext].name);
-            }
+        case EV_TAP: {
+            int hit = widget_list_hit_test(ev->x, ev->y, (int)idx->count,
+                                            app->sel_ext, 20, 20, fb_width() - 40, fb_height() - 100);
+            if (hit < 0) break;
+            app->sel_ext = hit;
+            char dest[512];
+            snprintf(dest, sizeof(dest), "%s%s.tkext.json", EXT_DIR,
+                     idx->entries[app->sel_ext].id);
+            int rc = repo_download_extension(app->repo_urls[app->sel_repo],
+                                              &idx->entries[app->sel_ext], dest);
+            snprintf(app->download_status, sizeof(app->download_status),
+                      rc == 0 ? "Downloaded %s" : "Failed: %s",
+                      idx->entries[app->sel_ext].name);
             break;
+        }
         case EV_KEY_BACK:
             repo_index_free(&app->cur_repo_index);
             app->cur_repo_index_loaded = 0;

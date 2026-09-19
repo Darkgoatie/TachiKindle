@@ -54,10 +54,15 @@ void ui_chapters_handle(app_t *app, const ci_event_t *ev) {
         case EV_SWIPE_D:
             if (app->sel_chapter > 0) app->sel_chapter--;
             break;
-        case EV_TAP:
+        case EV_TAP: {
+            int hit = widget_list_hit_test(ev->x, ev->y, (int)s->n_chapters,
+                                            app->sel_chapter, 20, 20, fb_width() - 40, fb_height() - 40);
+            if (hit < 0) break;
+            app->sel_chapter = hit;
             app->screen = SCREEN_READER;
             ui_reader_enter(app);
             break;
+        }
         case EV_KEY_BACK:
             app->screen = SCREEN_LIBRARY;
             break;

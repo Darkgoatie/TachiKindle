@@ -32,7 +32,7 @@ HOSTCFLAGS = -std=gnu11 -g -O0 -Wall -Wextra -Isrc -Itests -Ithird_party/stb
 perf_scan: tools/perf_scan.c src/library.c
 	$(HOSTCC) -std=gnu11 -O2 -Isrc $^ -o $@
 
-test: test_progress test_archive test_library test_image test_navigation test_reader_load test_repo test_repo_store test_font
+test: test_progress test_archive test_library test_image test_navigation test_reader_load test_repo test_repo_store test_font test_widget
 	./test_progress
 	./test_archive
 	./test_library
@@ -42,6 +42,7 @@ test: test_progress test_archive test_library test_image test_navigation test_re
 	./test_repo
 	./test_repo_store
 	./test_font
+	./test_widget
 
 test_archive: tests/test_archive.c src/archive.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lzip
@@ -57,6 +58,9 @@ test_repo_store: tests/test_repo_store.c src/repo_store.c third_party/cjson/cJSO
 
 test_font: tests/test_font.c src/font.c
 	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@ -lm
+
+test_widget: tests/test_widget.c tests/fb_stub.c src/widget.c
+	$(HOSTCC) $(HOSTCFLAGS) $^ -o $@
 
 test_navigation: tests/test_navigation.c tests/fb_stub.c src/app.c src/library.c src/progress.c src/archive.c src/ui_library.c src/ui_chapters.c src/ui_reader.c src/ui_repo.c src/repo.c src/repo_store.c src/image.c src/widget.c src/log.c src/input.c third_party/cjson/cJSON.c
 	$(HOSTCC) $(HOSTCFLAGS) -Ithird_party/cjson $^ -o $@ -lzip -lm

@@ -58,10 +58,15 @@ void ui_library_handle(app_t *app, const ci_event_t *ev) {
         case EV_SWIPE_D:
             if (app->sel_series > 0) app->sel_series--;
             break;
-        case EV_TAP:
+        case EV_TAP: {
+            int hit = widget_list_hit_test(ev->x, ev->y, (int)app->lib.n_series,
+                                            app->sel_series, 20, 20, fb_width() - 40, fb_height() - 40);
+            if (hit < 0) break; /* tap missed every row -- do nothing */
+            app->sel_series = hit;
             app->sel_chapter = 0;
             app->screen = SCREEN_CHAPTERS;
             break;
+        }
         case EV_KEY_BACK:
             app->screen = SCREEN_EXIT;
             break;

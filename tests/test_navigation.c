@@ -20,8 +20,13 @@ int main(void) {
     progress_init(&app.prog);
     assert(app.lib.n_series == 2); /* Alpha, Beta (Empty excluded) */
 
-    /* library -> chapters via tap */
-    ci_event_t tap = { EV_TAP, 0, 0 };
+    /* library -> chapters via tap (must land inside the actual first
+       list row -- (20,20) is the list's top-left origin per
+       ui_library_draw/ui_library_handle's widget_list_hit_test call;
+       a tap at (0,0) is legitimately outside the list now that taps
+       are hit-tested against real row geometry, not just "wherever
+       swipe last left the cursor"). */
+    ci_event_t tap = { EV_TAP, 30, 30 };
     ui_library_handle(&app, &tap);
     assert(app.screen == SCREEN_CHAPTERS);
     assert(app.sel_chapter == 0);

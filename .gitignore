@@ -13,6 +13,7 @@ test_reader_load
 test_repo
 test_repo_store
 test_font
+test_widget
 tests/fixtures/*.cbz
 tests/fixtures/library/
 third_party/stb/*
