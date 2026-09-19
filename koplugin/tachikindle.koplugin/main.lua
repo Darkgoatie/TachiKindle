@@ -82,6 +82,12 @@ function TachiKindle:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = _("Favorites"),
+                callback = function()
+                    self:showFavorites()
+                end,
+            },
+            {
                 text = _("Manage Repos"),
                 callback = function()
                     self:showRepoList()
@@ -104,6 +110,22 @@ function TachiKindle:showSourceList()
         end,
     }
     UIManager:show(self.source_browser)
+end
+
+function TachiKindle:showFavorites()
+    self:loadSettings()
+    self.favorites_browser = TachiKindleSourceBrowser:new{
+        title = _("Favorites"),
+        start_screen = "favorites",
+        is_popout = false,
+        is_borderless = true,
+        title_bar_fm_style = true,
+        close_callback = function()
+            UIManager:close(self.favorites_browser)
+            self.favorites_browser = nil
+        end,
+    }
+    UIManager:show(self.favorites_browser)
 end
 
 function TachiKindle:onTachiKindleOpen()
