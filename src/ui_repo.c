@@ -8,11 +8,19 @@
 
 #define REPOS_JSON_PATH "/mnt/us/tachikindle/repos.json"
 #define EXT_DIR "/mnt/us/tachikindle/extensions/"
+#define DEFAULT_REPO_URL "https://raw.githubusercontent.com/darkgoatie/tachikindle-sources/main"
 
 static repo_store_t g_store;
 
 void ui_repo_enter_list(app_t *app) {
     repo_store_load(&g_store, REPOS_JSON_PATH);
+    /* First run (no repos.json yet, or it exists but is empty):
+       seed the user's own default repo so it's selectable without
+       having to type the URL in by hand every fresh install. */
+    if (g_store.count == 0) {
+        repo_store_add(&g_store, DEFAULT_REPO_URL);
+        repo_store_save(&g_store, REPOS_JSON_PATH);
+    }
     app->n_repos = g_store.count;
     for (int i = 0; i < g_store.count && i < APP_MAX_REPOS; i++) {
         snprintf(app->repo_urls[i], sizeof(app->repo_urls[i]), "%s", g_store.urls[i]);
@@ -84,13 +92,22 @@ void ui_repo_list_handle(app_t *app, const ci_event_t *ev) {
    text this app ever asks the user to type. No shift/uppercase --
    repo URLs don't need it, and skipping it avoids a second keyboard
    layout to draw and hit-test. Rows are simple fixed grids, not
-   variable-width per key, so hit-testing is just integer division. */
+   variable-width per key, so hit-testing is just integer division.
+   Anchored to the bottom of the screen (like KOReader's own
+   VirtualKeyboard) rather than a fixed offset from the top, so it
+   sits where a real keyboard would and doesn't waste vertical space
+   on devices with a taller/shorter panel. */
 #define KB_KEY_W 58
 #define KB_KEY_H 58
 #define KB_ROWS 4
-#define KB_COLS 10
+#define KB_SYM_ROW 1 /* symbol/backspace/go row, drawn below the letter rows */
+#define KB_TOTAL_ROWS (KB_ROWS + KB_SYM_ROW)
 #define KB_ORIGIN_X 10
-#define KB_ORIGIN_Y 240
+#define KB_BOTTOM_MARGIN 20
+
+static int kb_origin_y(void) {
+    return fb_height() - KB_BOTTOM_MARGIN - KB_TOTAL_ROWS * KB_KEY_H;
+}
 
 static const char *kb_rows[KB_ROWS] = {
     "1234567890",
@@ -108,6 +125,8 @@ void ui_repo_add_draw(app_t *app) {
     fb_text(20, 20, "Enter repo URL:", 3);
     fb_text(20, 60, app->url_entry[0] ? app->url_entry : "https://", 2);
 
+    int origin_y = kb_origin_y();
+
     for (int r = 0; r < KB_ROWS; r++) {
         const char *row = kb_rows[r];
         int len = (int)strlen(row);
@@ -116,7 +135,7 @@ void ui_repo_add_draw(app_t *app) {
             widget_button_t btn = {
                 .label = label,
                 .x = KB_ORIGIN_X + c * KB_KEY_W,
-                .y = KB_ORIGIN_Y + r * KB_KEY_H,
+                .y = origin_y + r * KB_KEY_H,
                 .w = KB_KEY_W - 4,
                 .h = KB_KEY_H - 4,
             };
@@ -124,7 +143,7 @@ void ui_repo_add_draw(app_t *app) {
         }
     }
 
-    int sym_row_y = KB_ORIGIN_Y + KB_ROWS * KB_KEY_H;
+    int sym_row_y = origin_y + KB_ROWS * KB_KEY_H;
     int n_syms = (int)strlen(kb_symbols);
     for (int c = 0; c < n_syms; c++) {
         char label[2] = { kb_symbols[c], '\0' };
@@ -159,8 +178,9 @@ void ui_repo_add_draw(app_t *app) {
    caller checks the two special zones (back_btn, go_btn) separately
    since they aren't single characters. */
 static int kb_hit_char(int x, int y, char *out_char) {
-    if (y < KB_ORIGIN_Y) return 0;
-    int row = (y - KB_ORIGIN_Y) / KB_KEY_H;
+    int origin_y = kb_origin_y();
+    if (y < origin_y) return 0;
+    int row = (y - origin_y) / KB_KEY_H;
     int col = (x - KB_ORIGIN_X) / KB_KEY_W;
     if (col < 0) return 0;
 
@@ -189,7 +209,7 @@ void ui_repo_add_handle(app_t *app, const ci_event_t *ev) {
     }
     if (ev->type != EV_TAP) return;
 
-    int sym_row_y = KB_ORIGIN_Y + KB_ROWS * KB_KEY_H;
+    int sym_row_y = kb_origin_y() + KB_ROWS * KB_KEY_H;
     int n_syms = (int)strlen(kb_symbols);
     int back_x0 = KB_ORIGIN_X + n_syms * KB_KEY_W;
     int go_x0 = KB_ORIGIN_X + (n_syms + 1) * KB_KEY_W;
