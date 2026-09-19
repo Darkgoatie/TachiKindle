@@ -1,10 +1,9 @@
 --[[--
 TachiKindleSource: the runtime that actually executes a downloaded
 .tkext.json against a live website. Loads the JSON, resolves
-endpoint URL templates, fetches HTML over the network (never saves
-pages/images to disk -- everything is read live, per the user's
-requirement that chapters are read online, not downloaded), and
-extracts data using KOReader's own bundled htmlparser
+endpoint URL templates, fetches HTML over the network, and
+extracts data using KOReader's own bundled htmlparser. Chapter page
+lists and image bytes are cached on disk for offline reading.
 (common/htmlparser.lua + common/htmlparser/ElementNode.lua) --
 confirmed present and used elsewhere in KOReader (newsdownloader's
 epubdownloadbackend.lua) via `require("htmlparser")`, real CSS-class/
@@ -25,6 +24,8 @@ local http = require("socket.http")
 local ltn12 = require("ltn12")
 local JSON = require("json")
 local logger = require("logger")
+local DataStorage = require("datastorage")
+local lfs = require("libs/libkoreader-lfs")
 
 local TachiKindleSource = {}
 TachiKindleSource.__index = TachiKindleSource
@@ -127,6 +128,106 @@ local function applySelector(node, selector)
     return v
 end
 
+local function normalizeUrl(base_url, v)
+    if not v then return nil end
+    v = tostring(v):gsub("^%s+", ""):gsub("%s+$", "")
+    v = v:gsub('^"', ""):gsub('"$', "")
+    if v == "" or v == "nil" then return nil end
+    if v:match("^https?://") then return v end
+    if v:match("^//") then return "https:" .. v end
+    if v:match("^/") then return base_url .. v end
+    return nil
+end
+
+local function safeKey(s)
+    s = tostring(s or "")
+    return (s:gsub("[^%w]", "_"))
+end
+
+local function ensureDir(path)
+    if lfs.attributes(path, "mode") == "directory" then return true end
+    local cur = ""
+    for part in path:gmatch("[^/]+") do
+        cur = cur == "" and part or (cur .. "/" .. part)
+        if lfs.attributes(cur, "mode") ~= "directory" then
+            local ok, err = lfs.mkdir(cur)
+            if not ok then return nil, err end
+        end
+    end
+    return true
+end
+
+function TachiKindleSource:cacheRoot()
+    return DataStorage:getDataDir() .. "/tachikindle/cache"
+end
+
+function TachiKindleSource:chapterCacheDir(chapter_url)
+    return self:cacheRoot() .. "/" .. safeKey(self.def.id) .. "/" .. safeKey(chapter_url)
+end
+
+function TachiKindleSource:pageListCachePath(chapter_url)
+    return self:chapterCacheDir(chapter_url) .. "/pages.json"
+end
+
+function TachiKindleSource:pageCachePath(chapter_url, index, page_url)
+    local ext = tostring(page_url or ""):match("%.([A-Za-z0-9]+)(%?.*)?$")
+    ext = ext and ext:lower() or "img"
+    if #ext > 5 then ext = "img" end
+    return string.format("%s/page_%04d.%s", self:chapterCacheDir(chapter_url), index, ext)
+end
+
+function TachiKindleSource:savePageListCache(chapter_url, pages)
+    local dir = self:chapterCacheDir(chapter_url)
+    local ok, err = ensureDir(dir)
+    if not ok then return nil, err end
+    local f, ferr = io.open(self:pageListCachePath(chapter_url), "w")
+    if not f then return nil, ferr end
+    f:write(JSON.encode({ pages = pages }))
+    f:close()
+    return true
+end
+
+function TachiKindleSource:loadPageListCache(chapter_url)
+    local f = io.open(self:pageListCachePath(chapter_url), "r")
+    if not f then return nil end
+    local body = f:read("*a")
+    f:close()
+    local ok, obj = pcall(JSON.decode, body)
+    if not ok or type(obj) ~= "table" or type(obj.pages) ~= "table" then
+        return nil
+    end
+    return obj.pages
+end
+
+function TachiKindleSource:saveCachedPage(chapter_url, index, page_url, body)
+    local dir = self:chapterCacheDir(chapter_url)
+    local ok, err = ensureDir(dir)
+    if not ok then return nil, err end
+    local path = self:pageCachePath(chapter_url, index, page_url)
+    local tmp = path .. ".tmp"
+    local f, ferr = io.open(tmp, "wb")
+    if not f then return nil, ferr end
+    f:write(body)
+    f:close()
+    os.remove(path)
+    local rok, rerr = os.rename(tmp, path)
+    if not rok then
+        os.remove(tmp)
+        return nil, rerr
+    end
+    return path
+end
+
+function TachiKindleSource:loadCachedPage(chapter_url, index, page_url)
+    local path = self:pageCachePath(chapter_url, index, page_url)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local body = f:read("*a")
+    f:close()
+    if not body or #body == 0 then return nil end
+    return body
+end
+
 -- Popular/latest/search manga list -> { {title, url, cover}, ... }.
 -- offset is derived from page (1-indexed) using a fixed page size,
 -- since WeebCentral's real API takes offset=(page-1)*pageSize, not
@@ -212,35 +313,366 @@ function TachiKindleSource:fetchChapterList(manga_url)
     logger.info("TachiKindle: chapter_item selector '" .. tostring(sel.chapter_item) .. "' matched " .. #items .. " items")
     local list = {}
     for _, item in ipairs(items) do
-        table.insert(list, {
-            title = applySelector(item, sel.chapter_title),
-            url = applySelector(item, sel.chapter_url),
-            date = sel.chapter_date and applySelector(item, sel.chapter_date) or nil,
-        })
+        local chapter_url = normalizeUrl(self.def.base_url, applySelector(item, sel.chapter_url))
+        if chapter_url then
+            table.insert(list, {
+                title = applySelector(item, sel.chapter_title),
+                url = chapter_url,
+                date = sel.chapter_date and applySelector(item, sel.chapter_date) or nil,
+            })
+        end
     end
     return list
 end
 
--- Page image URLs for a chapter -> { url, url, ... }. Nothing is
--- downloaded to disk here -- the reader UI fetches each image URL
--- on demand as the user turns pages (see ui_online_reader.lua).
+-- Page image URLs for a chapter -> { url, url, ... }.
+-- If online fetch fails, falls back to previously cached page-list metadata.
 function TachiKindleSource:fetchPageList(chapter_url)
     local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
     if not url then return nil, err end
     local body, ferr = self:fetch(url)
-    if not body then return nil, ferr end
-
-    local root = htmlparser.parse(body, 5000)
-    local sel = self.def.selectors
-    local pages = {}
-    for _, img in ipairs(root:select(sel.page_image.sel)) do
-        local v = img.attributes[sel.page_image.attr]
-        if (not v or v == "") and sel.page_image.fallback_attr then
-            v = img.attributes[sel.page_image.fallback_attr]
+    if body then
+        local root = htmlparser.parse(body, 5000)
+        local sel = self.def.selectors
+        local pages = {}
+        for _, img in ipairs(root:select(sel.page_image.sel)) do
+            local v = img.attributes[sel.page_image.attr]
+            if (not v or v == "") and sel.page_image.fallback_attr then
+                v = img.attributes[sel.page_image.fallback_attr]
+            end
+            v = normalizeUrl(self.def.base_url, v)
+            if v then table.insert(pages, v) end
         end
-        if v and v ~= "" then table.insert(pages, v) end
+        if #pages > 0 then
+            self:savePageListCache(chapter_url, pages)
+        end
+        return pages
     end
-    return pages
+
+    local cached_pages = self:loadPageListCache(chapter_url)
+    if cached_pages and #cached_pages > 0 then
+        logger.info("TachiKindle: using cached page list for offline chapter: " .. tostring(chapter_url))
+        return cached_pages
+    end
+    return nil, ferr
+end
+
+-- Returns bytes for one chapter page. Reads cache first for offline support,
+-- falls back to network and stores successful fetches into cache.
+function TachiKindleSource:fetchChapterPage(chapter_url, page_index, page_url)
+    local cached = self:loadCachedPage(chapter_url, page_index, page_url)
+    if cached then return cached, nil, true end
+    local body, err = self:fetch(page_url)
+    if not body then return nil, err, false end
+    self:saveCachedPage(chapter_url, page_index, page_url, body)
+    return body, nil, false
+end
+
+function TachiKindleSource:chapterMetaPath(chapter_url)
+    return self:chapterCacheDir(chapter_url) .. "/meta.json"
+end
+
+function TachiKindleSource:saveChapterMeta(chapter_url, meta)
+    local dir = self:chapterCacheDir(chapter_url)
+    local ok, err = ensureDir(dir)
+    if not ok then return nil, err end
+    local f, ferr = io.open(self:chapterMetaPath(chapter_url), "w")
+    if not f then return nil, ferr end
+    f:write(JSON.encode(meta or {}))
+    f:close()
+    return true
+end
+
+function TachiKindleSource:loadChapterMeta(chapter_url)
+    local f = io.open(self:chapterMetaPath(chapter_url), "r")
+    if not f then return nil end
+    local body = f:read("*a")
+    f:close()
+    local ok, meta = pcall(JSON.decode, body)
+    if not ok or type(meta) ~= "table" then return nil end
+    return meta
+end
+
+function TachiKindleSource:chapterCacheStats(chapter_url)
+    local pages = self:loadPageListCache(chapter_url) or {}
+    local saved = 0
+    local size_bytes = 0
+    for i, page_url in ipairs(pages) do
+        local path = self:pageCachePath(chapter_url, i, page_url)
+        local st = lfs.attributes(path)
+        if st and st.size and st.size > 0 then
+            saved = saved + 1
+            size_bytes = size_bytes + st.size
+        end
+    end
+    return {
+        total = #pages,
+        saved = saved,
+        failed = math.max(#pages - saved, 0),
+        complete = #pages > 0 and saved == #pages,
+        size_bytes = size_bytes,
+    }
+end
+
+-- Best-effort prefetch for offline reading: saves page list + every page image.
+-- opts:
+--   force=true         redownload all pages
+--   manga_title=string persisted in chapter metadata
+--   chapter_title=string persisted in chapter metadata
+function TachiKindleSource:prefetchChapter(chapter_url, opts)
+    opts = opts or {}
+    local pages, err = self:fetchPageList(chapter_url)
+    if not pages then return nil, err end
+
+    local ok_count, fail_count = 0, 0
+    for i, page_url in ipairs(pages) do
+        local body = (not opts.force) and self:loadCachedPage(chapter_url, i, page_url) or nil
+        if body then
+            ok_count = ok_count + 1
+        else
+            local fetched, ferr = self:fetch(page_url)
+            if fetched then
+                self:saveCachedPage(chapter_url, i, page_url, fetched)
+                ok_count = ok_count + 1
+            else
+                logger.warn("TachiKindle: prefetch page failed", i, ferr)
+                fail_count = fail_count + 1
+            end
+        end
+    end
+
+    local result = {
+        total = #pages,
+        saved = ok_count,
+        failed = fail_count,
+    }
+
+    local stats = self:chapterCacheStats(chapter_url)
+    self:saveChapterMeta(chapter_url, {
+        source_id = self.def.id,
+        source_name = self.def.name,
+        chapter_url = chapter_url,
+        chapter_title = opts.chapter_title,
+        manga_title = opts.manga_title,
+        cached_at = os.time(),
+        total = stats.total,
+        saved = stats.saved,
+        failed = stats.failed,
+        complete = stats.complete,
+        size_bytes = stats.size_bytes,
+    })
+
+    return result
+end
+
+function TachiKindleSource:verifyChapterCache(chapter_url)
+    local stats = self:chapterCacheStats(chapter_url)
+    local meta = self:loadChapterMeta(chapter_url) or {}
+    meta.total = stats.total
+    meta.saved = stats.saved
+    meta.failed = stats.failed
+    meta.complete = stats.complete
+    meta.size_bytes = stats.size_bytes
+    meta.verified_at = os.time()
+    self:saveChapterMeta(chapter_url, meta)
+    return stats
+end
+
+function TachiKindleSource:deleteChapterCache(chapter_url)
+    local dir = self:chapterCacheDir(chapter_url)
+    if lfs.attributes(dir, "mode") ~= "directory" then
+        return true
+    end
+    for name in lfs.dir(dir) do
+        if name ~= "." and name ~= ".." then
+            os.remove(dir .. "/" .. name)
+        end
+    end
+    lfs.rmdir(dir)
+    return true
+end
+
+function TachiKindleSource:listCachedChapters()
+    local root = self:cacheRoot() .. "/" .. safeKey(self.def.id)
+    local out = {}
+    if lfs.attributes(root, "mode") ~= "directory" then return out end
+    for dirname in lfs.dir(root) do
+        if dirname ~= "." and dirname ~= ".." then
+            local dir = root .. "/" .. dirname
+            if lfs.attributes(dir, "mode") == "directory" then
+                local f = io.open(dir .. "/meta.json", "r")
+                local meta = nil
+                if f then
+                    local body = f:read("*a")
+                    f:close()
+                    local ok, m = pcall(JSON.decode, body)
+                    if ok and type(m) == "table" then meta = m end
+                end
+                local chapter_url = meta and meta.chapter_url or nil
+                if chapter_url then
+                    local stats = self:chapterCacheStats(chapter_url)
+                    table.insert(out, {
+                        source_id = self.def.id,
+                        source_name = self.def.name,
+                        chapter_url = chapter_url,
+                        chapter_title = meta.chapter_title or chapter_url,
+                        manga_title = meta.manga_title,
+                        cached_at = meta.cached_at,
+                        total = stats.total,
+                        saved = stats.saved,
+                        failed = stats.failed,
+                        complete = stats.complete,
+                        size_bytes = stats.size_bytes,
+                    })
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return (a.cached_at or 0) > (b.cached_at or 0) end)
+    return out
+end
+
+function TachiKindleSource:queuePath()
+    return self:cacheRoot() .. "/download_queue.json"
+end
+
+function TachiKindleSource:loadQueue()
+    local f = io.open(self:queuePath(), "r")
+    if not f then return {} end
+    local body = f:read("*a")
+    f:close()
+    local ok, q = pcall(JSON.decode, body)
+    if not ok or type(q) ~= "table" then return {} end
+    return q
+end
+
+function TachiKindleSource:saveQueue(q)
+    local ok, err = ensureDir(self:cacheRoot())
+    if not ok then return nil, err end
+    local f, ferr = io.open(self:queuePath(), "w")
+    if not f then return nil, ferr end
+    f:write(JSON.encode(q or {}))
+    f:close()
+    return true
+end
+
+function TachiKindleSource:enqueueChapter(job)
+    local q = self:loadQueue()
+    job = job or {}
+    job.source_id = self.def.id
+    job.source_name = self.def.name
+    job.priority = tonumber(job.priority) or 5
+    job.created_at = os.time()
+    table.insert(q, job)
+    table.sort(q, function(a, b)
+        if (a.priority or 5) == (b.priority or 5) then
+            return (a.created_at or 0) < (b.created_at or 0)
+        end
+        return (a.priority or 5) < (b.priority or 5)
+    end)
+    self:saveQueue(q)
+    return #q
+end
+
+function TachiKindleSource:removeQueueJob(index)
+    local q = self:loadQueue()
+    table.remove(q, index)
+    self:saveQueue(q)
+    return q
+end
+
+function TachiKindleSource:pauseQueueJob(index)
+    local q = self:loadQueue()
+    if q[index] then q[index].paused = true end
+    self:saveQueue(q)
+    return q
+end
+
+function TachiKindleSource:resumeQueueJob(index)
+    local q = self:loadQueue()
+    if q[index] then q[index].paused = false end
+    self:saveQueue(q)
+    return q
+end
+
+function TachiKindleSource:setAllQueuePaused(paused)
+    local q = self:loadQueue()
+    for _, job in ipairs(q) do
+        if job.source_id == self.def.id then job.paused = paused and true or false end
+    end
+    self:saveQueue(q)
+    return q
+end
+
+function TachiKindleSource:clearQueue()
+    local q = self:loadQueue()
+    local kept = {}
+    for _, job in ipairs(q) do
+        if job.source_id ~= self.def.id then table.insert(kept, job) end
+    end
+    self:saveQueue(kept)
+    return kept
+end
+
+function TachiKindleSource:processQueue(max_jobs)
+    max_jobs = tonumber(max_jobs) or 1
+    local q = self:loadQueue()
+    local done, failed = 0, 0
+    local i = 1
+    while i <= #q and done < max_jobs do
+        local job = q[i]
+        if job.source_id == self.def.id and not job.paused and job.chapter_url then
+            local result = self:prefetchChapter(job.chapter_url, {
+                force = job.force,
+                manga_title = job.manga_title,
+                chapter_title = job.chapter_title,
+            })
+            if result and result.total > 0 and result.saved > 0 then
+                table.remove(q, i)
+                done = done + 1
+            else
+                job.last_error = "download_failed"
+                failed = failed + 1
+                i = i + 1
+            end
+        else
+            i = i + 1
+        end
+    end
+    self:saveQueue(q)
+    return { done = done, failed = failed, remaining = #q }
+end
+
+function TachiKindleSource:totalCacheBytes()
+    local root = self:cacheRoot()
+    local total = 0
+    local function walk(dir)
+        if lfs.attributes(dir, "mode") ~= "directory" then return end
+        for name in lfs.dir(dir) do
+            if name ~= "." and name ~= ".." then
+                local path = dir .. "/" .. name
+                local st = lfs.attributes(path)
+                if st and st.mode == "directory" then
+                    walk(path)
+                elseif st and st.size then
+                    total = total + st.size
+                end
+            end
+        end
+    end
+    walk(root)
+    return total
+end
+
+function TachiKindleSource:cleanFailedCaches()
+    local removed = 0
+    for _, ch in ipairs(self:listCachedChapters()) do
+        if ch.failed > 0 and ch.saved == 0 then
+            self:deleteChapterCache(ch.chapter_url)
+            removed = removed + 1
+        end
+    end
+    return removed
 end
 
 return TachiKindleSource
