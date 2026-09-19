@@ -72,10 +72,20 @@ function TachiKindleSource:resolveUrl(endpoint_name, vars)
     return self.def.base_url .. path
 end
 
--- GET a URL using this source's declared user_agent/headers.
+-- GET a URL using this source's declared user_agent/headers. Default
+-- Accept mimics a real browser -- weebcentral.com (and likely other
+-- sites behind similar bot-detection) serves a near-empty stub page
+-- for Accept: */* (curl/plain HTTP client default) but real content
+-- for a browser-shaped Accept header. Confirmed live: same URL, same
+-- UA, only the Accept header differed between a 300-byte stub and a
+-- real 247KB page with all 133 chapters.
 function TachiKindleSource:fetch(url)
     local sink = {}
-    local headers = { ["Accept-Encoding"] = "identity" }
+    local headers = {
+        ["Accept-Encoding"] = "identity",
+        ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ["Accept-Language"] = "en-US,en;q=0.9",
+    }
     local client = self.def.client or {}
     if client.user_agent then headers["User-Agent"] = client.user_agent end
     for k, v in pairs(client.extra_headers or {}) do headers[k] = v end
