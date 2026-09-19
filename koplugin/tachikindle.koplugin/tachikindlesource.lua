@@ -19,6 +19,7 @@ reference this module consumes.
 
 local htmlparser = require("htmlparser")
 local socket = require("socket")
+local socket_url = require("socket.url")
 local socketutil = require("socketutil")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
@@ -43,10 +44,14 @@ function TachiKindleSource:load(path)
     return setmetatable({ def = def }, self)
 end
 
--- Fill {placeholders} in an endpoint path template.
+-- Fill {placeholders} in an endpoint path template. query is
+-- URL-encoded since it's user-typed free text; page/manga_url/
+-- chapter_url are either numeric or already-URL-safe scraped links.
 local function fillTemplate(tpl, vars)
     return (tpl:gsub("{(%w+)}", function(key)
-        return tostring(vars[key] or "")
+        local v = tostring(vars[key] or "")
+        if key == "query" then v = socket_url.escape(v) end
+        return v
     end))
 end
 
@@ -100,9 +105,9 @@ local function applySelector(node, selector)
     return v
 end
 
--- Popular/latest manga list -> { {title, url, cover}, ... }
-function TachiKindleSource:fetchMangaList(endpoint_name, page)
-    local url, err = self:resolveUrl(endpoint_name, { page = page or 1 })
+-- Popular/latest/search manga list -> { {title, url, cover}, ... }
+function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
+    local url, err = self:resolveUrl(endpoint_name, { page = page or 1, query = query or "" })
     if not url then return nil, err end
     local body, ferr = self:fetch(url)
     if not body then return nil, ferr end

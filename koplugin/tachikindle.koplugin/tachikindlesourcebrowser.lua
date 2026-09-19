@@ -11,6 +11,7 @@ the second Menu-based browser, separate from TachiKindleBrowser
 local ButtonDialog = require("ui/widget/buttondialog")
 local DataStorage = require("datastorage")
 local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local UIManager = require("ui/uimanager")
 local TachiKindleSource = require("tachikindlesource")
@@ -66,7 +67,7 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         return true
     end
     if self.screen == SCREEN_SOURCE_LIST and item.source then
-        self:openSource(item.source)
+        self:promptSearch(item.source)
         return true
     end
     if self.screen == SCREEN_MANGA_LIST and item.manga then
@@ -80,20 +81,56 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
     return true
 end
 
-function TachiKindleSourceBrowser:openSource(source, page)
-    page = page or 1
-    local loading = InfoMessage:new{ text = _("Loading…") }
+-- Nothing is fetched/rendered until the user actually types a query
+-- and submits -- rendering a full 25-32 item popular list at once
+-- was leaving stale/blank e-ink regions on real hardware (large
+-- single-shot Menu repaints outrunning the panel's refresh), so
+-- search-first with small paginated result pages replaces it.
+function TachiKindleSourceBrowser:promptSearch(source)
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = source.def.name,
+        input_hint = _("Search manga…"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local query = input_dialog:getInputText()
+                        UIManager:close(input_dialog)
+                        if query and query ~= "" then
+                            self:runSearch(source, query, 1)
+                        end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
+function TachiKindleSourceBrowser:runSearch(source, query, page)
+    local loading = InfoMessage:new{ text = _("Searching…") }
     UIManager:show(loading)
     UIManager:forceRePaint()
-    local list, err, has_next = source:fetchMangaList("popular", page)
+    local list, err, has_next = source:fetchMangaList("search", page, query)
     UIManager:close(loading)
 
     if not list then
-        UIManager:show(InfoMessage:new{ text = _("Failed to load source: ") .. tostring(err) })
+        UIManager:show(InfoMessage:new{ text = _("Search failed: ") .. tostring(err) })
         return
     end
     if #list == 0 then
-        UIManager:show(InfoMessage:new{ text = _("No manga found.") })
+        UIManager:show(InfoMessage:new{ text = _("No results.") })
         return
     end
 
@@ -109,10 +146,10 @@ function TachiKindleSourceBrowser:openSource(source, page)
     if has_next then
         table.insert(item_table, {
             text = _("Next page →"),
-            callback = function() self:openSource(source, page + 1) end,
+            callback = function() self:runSearch(source, query, page + 1) end,
         })
     end
-    self:switchItemTable(source.def.name, item_table)
+    self:switchItemTable(query, item_table)
     UIManager:setDirty(self, "full")
 end
 
