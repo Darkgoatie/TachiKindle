@@ -1,0 +1,14 @@
+{
+  "repo_name": "TachiKindle Test Repo",
+  "repo_format_version": 1,
+  "extensions": [
+    {
+      "id": "en.example_madara",
+      "name": "Example (Madara)",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "SAFE",
+      "path": "sources/en/example_madara.tkext.json"
+    }
+  ]
+}
