@@ -40,7 +40,7 @@ local TachiKindle = WidgetContainer:extend{
     default_repos = {
         {
             title = "TachiKindle Sources",
-            url = "https://raw.githubusercontent.com/darkgoatie/tachikindle-sources/main",
+            url = "https://raw.githubusercontent.com/Darkgoatie/TachiKindle/main/extensions/testrepo",
         },
     },
 }
