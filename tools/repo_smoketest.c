@@ -3,6 +3,7 @@
    ./repo_smoketest <repo_url> */
 #include "../src/repo.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s <repo_url>\n", argv[0]); return 2; }
