@@ -32,11 +32,14 @@ local SCREEN_SOURCE_LIST = "source_list"
 local SCREEN_MANGA_LIST = "manga_list"
 local SCREEN_CHAPTER_LIST = "chapter_list"
 local SCREEN_FAVORITES = "favorites"
+local SCREEN_OFFLINE = "offline"
 
 function TachiKindleSourceBrowser:init()
     self.screen = self.start_screen or SCREEN_SOURCE_LIST
     if self.screen == SCREEN_FAVORITES then
         self.item_table = self:genFavoritesItemTable()
+    elseif self.screen == SCREEN_OFFLINE then
+        self.item_table = self:genOfflineItemTable()
     else
         self.item_table = self:genSourceItemTable()
     end
@@ -67,7 +70,16 @@ function TachiKindleSourceBrowser:loadAllSources()
 end
 
 function TachiKindleSourceBrowser:genSourceItemTable()
-    local item_table = {}
+    local item_table = {
+        {
+            text = _("Offline Library"),
+            callback = function() self:showOfflineLibrary() end,
+        },
+        {
+            text = _("Process download queue"),
+            callback = function() self:processDownloadQueue() end,
+        },
+    }
     for _, source in pairs(self:loadAllSources()) do
         table.insert(item_table, {
             text = source.def.name or source.def.id,
@@ -113,6 +125,202 @@ function TachiKindleSourceBrowser:genFavoritesItemTable()
     return item_table
 end
 
+local function fmtMB(bytes)
+    bytes = tonumber(bytes) or 0
+    return string.format("%.1fMB", bytes / (1024 * 1024))
+end
+
+function TachiKindleSourceBrowser:genOfflineItemTable()
+    local items = {
+        {
+            text = _("Process queue now"),
+            callback = function() self:processDownloadQueue() end,
+        },
+        {
+            text = _("Clean failed caches"),
+            callback = function() self:cleanFailedCaches() end,
+        },
+        {
+            text = _("Pause queue"),
+            callback = function() self:setQueuePaused(true) end,
+        },
+        {
+            text = _("Resume queue"),
+            callback = function() self:setQueuePaused(false) end,
+        },
+        {
+            text = _("Clear queue"),
+            callback = function() self:clearQueue() end,
+        },
+        {
+            text = _("Export offline manifest"),
+            callback = function() self:exportOfflineManifest() end,
+        },
+        {
+            text = _("Import offline manifest"),
+            callback = function() self:importOfflineManifest() end,
+        },
+    }
+    local sources = self:loadAllSources()
+    local total_bytes = 0
+    for _, source in pairs(sources) do
+        local cached = source:listCachedChapters()
+        for _, ch in ipairs(cached) do
+            total_bytes = total_bytes + (ch.size_bytes or 0)
+            table.insert(items, {
+                text = string.format("[%s] %s / %s  (%s)", ch.complete and "Complete" or "Partial", ch.manga_title or "Manga", ch.chapter_title or ch.chapter_url, fmtMB(ch.size_bytes)),
+                source = source,
+                chapter = { title = ch.chapter_title, url = ch.chapter_url },
+                offline_entry = ch,
+            })
+        end
+    end
+    if #items == 2 then
+        table.insert(items, { text = _("No offline chapters yet.") })
+    else
+        table.insert(items, 3, { text = _("Total cache: ") .. fmtMB(total_bytes) })
+    end
+    return items
+end
+
+function TachiKindleSourceBrowser:showOfflineLibrary()
+    self.screen = SCREEN_OFFLINE
+    self:switchItemTable(_("Offline Library"), self:genOfflineItemTable())
+    UIManager:setDirty(self, "full")
+end
+
+function TachiKindleSourceBrowser:cleanFailedCaches()
+    local removed = 0
+    for _, source in pairs(self:loadAllSources()) do
+        removed = removed + source:cleanFailedCaches()
+    end
+    UIManager:show(InfoMessage:new{ text = _("Removed failed caches: ") .. tostring(removed), timeout = 2 })
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    end
+end
+
+function TachiKindleSourceBrowser:exportOfflineManifest()
+    local sources = self:loadAllSources()
+    local all = {}
+    for _, source in pairs(sources) do
+        for _, ch in ipairs(source:listCachedChapters()) do
+            table.insert(all, ch)
+        end
+    end
+    local path = DataStorage:getDataDir() .. "/tachikindle/offline_manifest.json"
+    local f = io.open(path, "w")
+    if not f then
+        UIManager:show(InfoMessage:new{ text = _("Failed to export manifest") })
+        return
+    end
+    f:write(require("json").encode({ exported_at = os.time(), chapters = all }))
+    f:close()
+    UIManager:show(InfoMessage:new{ text = _("Manifest exported: ") .. path, timeout = 2 })
+end
+
+function TachiKindleSourceBrowser:importOfflineManifest()
+    local path = DataStorage:getDataDir() .. "/tachikindle/offline_manifest.json"
+    local f = io.open(path, "r")
+    if not f then
+        UIManager:show(InfoMessage:new{ text = _("No manifest file found") })
+        return
+    end
+    local body = f:read("*a")
+    f:close()
+    local ok, obj = pcall(require("json").decode, body)
+    if not ok or type(obj) ~= "table" or type(obj.chapters) ~= "table" then
+        UIManager:show(InfoMessage:new{ text = _("Invalid manifest file") })
+        return
+    end
+    local sources = self:loadAllSources()
+    local imported = 0
+    for _, ch in ipairs(obj.chapters) do
+        local s = sources[ch.source_id]
+        if s and ch.chapter_url then
+            local meta = {
+                source_id = ch.source_id,
+                source_name = ch.source_name,
+                chapter_url = ch.chapter_url,
+                chapter_title = ch.chapter_title,
+                manga_title = ch.manga_title,
+                cached_at = ch.cached_at,
+                total = ch.total,
+                saved = ch.saved,
+                failed = ch.failed,
+                complete = ch.complete,
+                size_bytes = ch.size_bytes,
+            }
+            s:saveChapterMeta(ch.chapter_url, meta)
+            imported = imported + 1
+        end
+    end
+    UIManager:show(InfoMessage:new{ text = _("Manifest imported entries: ") .. tostring(imported), timeout = 2 })
+    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+end
+
+function TachiKindleSourceBrowser:downloadChapterRange(source, chapters, count, force)
+    count = math.min(tonumber(count) or 0, #chapters)
+    if count <= 0 then return end
+    local done, failed = 0, 0
+    for i = 1, count do
+        local ch = chapters[i]
+        local result = source:prefetchChapter(ch.url, {
+            force = force,
+            chapter_title = ch.title,
+            manga_title = self.current_manga and self.current_manga.title or nil,
+        })
+        if result and result.saved > 0 then done = done + 1 else failed = failed + 1 end
+    end
+    UIManager:show(InfoMessage:new{ text = string.format("Downloaded %d chapters (failed %d)", done, failed), timeout = 2 })
+end
+
+function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count, priority)
+    count = math.min(tonumber(count) or 0, #chapters)
+    local qn = 0
+    for i = 1, count do
+        local ch = chapters[i]
+        qn = source:enqueueChapter({
+            chapter_url = ch.url,
+            chapter_title = ch.title,
+            manga_title = self.current_manga and self.current_manga.title or nil,
+            priority = priority,
+        })
+    end
+    UIManager:show(InfoMessage:new{ text = string.format("Queued %d chapters. Jobs: %d", count, qn), timeout = 2 })
+end
+
+function TachiKindleSourceBrowser:processDownloadQueue()
+    local done, failed, remaining = 0, 0, 0
+    for _, source in pairs(self:loadAllSources()) do
+        local r = source:processQueue(5)
+        done = done + (r.done or 0)
+        failed = failed + (r.failed or 0)
+        remaining = remaining + (r.remaining or 0)
+    end
+    UIManager:show(InfoMessage:new{
+        text = string.format("Queue: done=%d failed=%d remaining=%d", done, failed, remaining),
+        timeout = 2,
+    })
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    end
+end
+
+function TachiKindleSourceBrowser:setQueuePaused(paused)
+    for _, source in pairs(self:loadAllSources()) do
+        source:setAllQueuePaused(paused)
+    end
+    UIManager:show(InfoMessage:new{ text = paused and _("Queue paused") or _("Queue resumed"), timeout = 1 })
+end
+
+function TachiKindleSourceBrowser:clearQueue()
+    for _, source in pairs(self:loadAllSources()) do
+        source:clearQueue()
+    end
+    UIManager:show(InfoMessage:new{ text = _("Queue cleared"), timeout = 1 })
+end
+
 function TachiKindleSourceBrowser:onMenuSelect(item)
     if item.callback then
         item.callback()
@@ -143,21 +351,44 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         self:openChapter(item.source, item.chapter)
         return true
     end
+    if self.screen == SCREEN_OFFLINE and item.chapter and item.source then
+        self:openChapter(item.source, item.chapter)
+        return true
+    end
     return true
 end
 
--- Long-press a manga row to toggle its favorite status. Confirmed
--- real hook: Menu:onMenuHold is meant to be overridden by callers
--- (base implementation is a no-op returning true, see menu.lua).
+function TachiKindleSourceBrowser:showChapterActions(item)
+    local dialog
+    local source = item.source
+    local chapter = item.chapter
+    dialog = ButtonDialog:new{
+        buttons = {
+            {{ text = _("Download offline"), callback = function() UIManager:close(dialog); self:downloadChapterForOffline(source, chapter, false) end, align = "left" }},
+            {{ text = _("Redownload"), callback = function() UIManager:close(dialog); self:downloadChapterForOffline(source, chapter, true) end, align = "left" }},
+            {{ text = _("Verify cache"), callback = function() UIManager:close(dialog); self:verifyOfflineChapter(source, chapter) end, align = "left" }},
+            {{ text = _("Delete cache"), callback = function() UIManager:close(dialog); self:deleteOfflineChapter(source, chapter) end, align = "left" }},
+            {{ text = _("Queue high"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 1) end, align = "left" }},
+            {{ text = _("Queue normal"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 5) end, align = "left" }},
+            {{ text = _("Queue low"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 9) end, align = "left" }},
+            {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end, align = "left" }},
+        },
+    }
+    UIManager:show(dialog)
+end
+
+-- Long-press row actions.
 function TachiKindleSourceBrowser:onMenuHold(item)
+    if (self.screen == SCREEN_CHAPTER_LIST or self.screen == SCREEN_OFFLINE) and item.chapter and item.source then
+        self:showChapterActions(item)
+        return true
+    end
     if item.manga and item.source then
         local now_favorite = TachiKindleFavorites:toggle(item.source.def.id, item.source.def.name, item.manga)
         UIManager:show(InfoMessage:new{
             text = now_favorite and _("Added to Favorites") or _("Removed from Favorites"),
             timeout = 1,
         })
-        -- Re-render whichever manga-list-shaped screen is showing so
-        -- the star prefix reflects the new state immediately.
         if self.screen == SCREEN_FAVORITES then
             self:switchItemTable(self.title, self:genFavoritesItemTable())
         elseif self.refresh_current_list then
@@ -166,6 +397,55 @@ function TachiKindleSourceBrowser:onMenuHold(item)
         UIManager:setDirty(self, "full")
     end
     return true
+end
+
+function TachiKindleSourceBrowser:queueChapter(source, chapter, priority)
+    local n = source:enqueueChapter({
+        chapter_url = chapter.url,
+        chapter_title = chapter.title,
+        manga_title = self.current_manga and self.current_manga.title or nil,
+        priority = priority,
+    })
+    UIManager:show(InfoMessage:new{ text = _("Queued. Jobs: ") .. tostring(n), timeout = 1 })
+end
+
+function TachiKindleSourceBrowser:verifyOfflineChapter(source, chapter)
+    local s = source:verifyChapterCache(chapter.url)
+    UIManager:show(InfoMessage:new{
+        text = string.format("Cache verify: %d/%d saved", s.saved or 0, s.total or 0),
+        timeout = 2,
+    })
+    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+end
+
+function TachiKindleSourceBrowser:deleteOfflineChapter(source, chapter)
+    source:deleteChapterCache(chapter.url)
+    UIManager:show(InfoMessage:new{ text = _("Offline cache deleted"), timeout = 1 })
+    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+end
+
+function TachiKindleSourceBrowser:downloadChapterForOffline(source, chapter, force)
+    local loading = InfoMessage:new{ text = _("Downloading for offline…") }
+    UIManager:show(loading)
+    UIManager:forceRePaint()
+    local result, err = source:prefetchChapter(chapter.url, {
+        force = force,
+        chapter_title = chapter.title,
+        manga_title = self.current_manga and self.current_manga.title or nil,
+    })
+    UIManager:close(loading)
+
+    if not result then
+        UIManager:show(InfoMessage:new{ text = _("Offline download failed: ") .. tostring(err) })
+        return
+    end
+
+    UIManager:show(InfoMessage:new{
+        text = _("Offline saved: ") .. tostring(result.saved) .. "/" .. tostring(result.total)
+            .. (result.failed > 0 and (_(" (failed: ") .. tostring(result.failed) .. ")") or ""),
+        timeout = 2,
+    })
+    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
 end
 
 function TachiKindleSourceBrowser:openSource(source, page)
@@ -273,6 +553,7 @@ function TachiKindleSourceBrowser:runSearch(source, query, page)
 end
 
 function TachiKindleSourceBrowser:openManga(source, manga)
+    self.current_manga = manga
     local loading = InfoMessage:new{ text = _("Loading chapters…") }
     UIManager:show(loading)
     UIManager:forceRePaint()
@@ -289,7 +570,28 @@ function TachiKindleSourceBrowser:openManga(source, manga)
     end
 
     self.screen = SCREEN_CHAPTER_LIST
-    local item_table = {}
+    local item_table = {
+        {
+            text = _("Hold a chapter for offline actions"),
+            callback = function() end,
+        },
+        {
+            text = _("Download next 3 chapters"),
+            callback = function() self:downloadChapterRange(source, chapters, 3, false) end,
+        },
+        {
+            text = _("Download next 10 chapters"),
+            callback = function() self:downloadChapterRange(source, chapters, 10, false) end,
+        },
+        {
+            text = _("Queue next 10 chapters"),
+            callback = function() self:queueChapterRange(source, chapters, 10, 5) end,
+        },
+        {
+            text = _("Queue all chapters"),
+            callback = function() self:queueChapterRange(source, chapters, #chapters, 5) end,
+        },
+    }
     for _, c in ipairs(chapters) do
         table.insert(item_table, {
             text = c.date and (c.title .. "  (" .. c.date .. ")") or c.title,
@@ -312,7 +614,18 @@ function TachiKindleSourceBrowser:openChapter(source, chapter)
         UIManager:show(InfoMessage:new{ text = _("Failed to load pages: ") .. tostring(err) })
         return
     end
-    TachiKindleReader.show(source, pages, chapter.title)
+
+    local stats = source:chapterCacheStats(chapter.url)
+    if stats.complete then
+        UIManager:show(InfoMessage:new{ text = _("Using offline copy"), timeout = 1 })
+    elseif stats.saved > 0 then
+        UIManager:show(InfoMessage:new{ text = _("Partial offline cache: ") .. tostring(stats.saved) .. "/" .. tostring(stats.total), timeout = 2 })
+    end
+    if stats.total > 0 and #pages > stats.total then
+        UIManager:show(InfoMessage:new{ text = _("Newer online version available"), timeout = 2 })
+    end
+
+    TachiKindleReader.show(source, chapter.url, pages, chapter.title)
 end
 
 return TachiKindleSourceBrowser
