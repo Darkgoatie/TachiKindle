@@ -82,8 +82,12 @@ end
 
 function TachiKindleSourceBrowser:openSource(source, page)
     page = page or 1
-    UIManager:show(InfoMessage:new{ text = _("Loading…"), timeout = 1 })
+    local loading = InfoMessage:new{ text = _("Loading…") }
+    UIManager:show(loading)
+    UIManager:forceRePaint()
     local list, err, has_next = source:fetchMangaList("popular", page)
+    UIManager:close(loading)
+
     if not list then
         UIManager:show(InfoMessage:new{ text = _("Failed to load source: ") .. tostring(err) })
         return
@@ -109,11 +113,16 @@ function TachiKindleSourceBrowser:openSource(source, page)
         })
     end
     self:switchItemTable(source.def.name, item_table)
+    UIManager:setDirty(self, "full")
 end
 
 function TachiKindleSourceBrowser:openManga(source, manga)
-    UIManager:show(InfoMessage:new{ text = _("Loading chapters…"), timeout = 1 })
+    local loading = InfoMessage:new{ text = _("Loading chapters…") }
+    UIManager:show(loading)
+    UIManager:forceRePaint()
     local chapters, err = source:fetchChapterList(manga.url)
+    UIManager:close(loading)
+
     if not chapters then
         UIManager:show(InfoMessage:new{ text = _("Failed to load chapters: ") .. tostring(err) })
         return
@@ -133,11 +142,16 @@ function TachiKindleSourceBrowser:openManga(source, manga)
         })
     end
     self:switchItemTable(manga.title, item_table)
+    UIManager:setDirty(self, "full")
 end
 
 function TachiKindleSourceBrowser:openChapter(source, chapter)
-    UIManager:show(InfoMessage:new{ text = _("Loading pages…"), timeout = 1 })
+    local loading = InfoMessage:new{ text = _("Loading pages…") }
+    UIManager:show(loading)
+    UIManager:forceRePaint()
     local pages, err = source:fetchPageList(chapter.url)
+    UIManager:close(loading)
+
     if not pages then
         UIManager:show(InfoMessage:new{ text = _("Failed to load pages: ") .. tostring(err) })
         return
