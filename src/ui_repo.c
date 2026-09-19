@@ -104,15 +104,21 @@ void ui_repo_list_handle(app_t *app, const ci_event_t *ev) {
    single fixed lowercase+symbol layer, not the full interaction
    model. See ui_repo.h for that scope decision.
 
-   Units: a "key width unit" is the base single-key width; a row's
-   total unit count times KB_UNIT_PX gives the row's pixel width, so
-   rows with different total units (KOReader's rows are NOT all the
-   same total either) size proportionally instead of a fixed grid. */
-#define KB_UNIT_PX 54
+   Unit size is NOT a fixed pixel value -- KOReader sizes keys from
+   the actual device width divided by the row's total unit count, so
+   the keyboard always spans the full screen width. All rows here
+   total 10 units, matching en_keyboard.lua's grid, so dividing
+   fb_width() by 10 reproduces the same key sizing KOReader shows
+   regardless of the exact panel width. */
+#define KB_ROW_UNITS 10
 #define KB_KEY_H 58
 #define KB_ROWS 5
-#define KB_ORIGIN_X 10
+#define KB_ORIGIN_X 0
 #define KB_BOTTOM_MARGIN 20
+
+static float kb_unit_px(void) {
+    return (float)fb_width() / (float)KB_ROW_UNITS;
+}
 
 typedef struct {
     const char *label; /* multi-char labels (Bksp, Enter, Space) render as-is */
@@ -166,12 +172,13 @@ typedef int (*kb_visit_fn)(const kb_key_t *key, int x, int y, int w, int h, void
 
 static int kb_walk(kb_visit_fn visit, void *ctx) {
     int origin_y = kb_origin_y();
+    float unit_px = kb_unit_px();
     for (int r = 0; r < KB_ROWS; r++) {
         int x = KB_ORIGIN_X;
         int y = origin_y + r * KB_KEY_H;
         for (int c = 0; c < kb_row_lens[r]; c++) {
             const kb_key_t *k = &kb_rows[r][c];
-            int w = (int)(k->width * KB_UNIT_PX);
+            int w = (int)(k->width * unit_px);
             if (visit(k, x, y, w, KB_KEY_H, ctx)) return 1;
             x += w;
         }
