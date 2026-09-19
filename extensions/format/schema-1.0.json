@@ -1,0 +1,97 @@
+{
+  "$id": "https://tachikindle/schema/extension-1.0.json",
+  "title": "TachiKindle Extension",
+  "type": "object",
+  "required": ["id", "name", "lang", "base_url", "version_code", "endpoints", "selectors"],
+  "properties": {
+    "id":            { "type": "string", "pattern": "^[a-z]{2,3}\\.[a-z0-9_]+$" },
+    "name":          { "type": "string" },
+    "lang":          { "type": "string" },
+    "base_url":      { "type": "string", "pattern": "^https://" },
+    "version_code":  { "type": "integer", "minimum": 1 },
+    "content_warning": { "enum": ["SAFE", "MIXED", "NSFW"] },
+    "theme":         { "type": "string", "description": "optional: name of a shared theme this extension is based on, resolved against extensions/themes/<theme>.tkext.json for defaults this file overrides" },
+
+    "client": {
+      "type": "object",
+      "properties": {
+        "user_agent":    { "type": "string" },
+        "extra_headers": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+
+    "endpoints": {
+      "type": "object",
+      "description": "URL templates. {page}, {query}, {manga_url}, {chapter_url} are substituted at request time. {query} is percent-encoded automatically.",
+      "properties": {
+        "popular":        { "$ref": "#/definitions/endpoint" },
+        "latest":         { "$ref": "#/definitions/endpoint" },
+        "search":         { "$ref": "#/definitions/endpoint" },
+        "manga_details":  { "$ref": "#/definitions/endpoint" },
+        "chapter_list":   { "$ref": "#/definitions/endpoint" },
+        "page_list":      { "$ref": "#/definitions/endpoint" }
+      },
+      "required": ["popular", "manga_details", "chapter_list", "page_list"]
+    },
+
+    "selectors": {
+      "type": "object",
+      "description": "CSS selectors evaluated by the built-in mini CSS engine (tag, .class, #id, [attr], [attr=val], descendant combinator only -- see references/css-subset.md for the exact supported grammar). Each value is either a bare selector string (text content is extracted) or a {sel, attr, fallback_attr?} object (an attribute is extracted instead).",
+      "required": [
+        "manga_list_item", "manga_title", "manga_url",
+        "details_title", "chapter_item", "chapter_title", "chapter_url",
+        "page_image"
+      ]
+    },
+
+    "pagination": {
+      "type": "object",
+      "properties": {
+        "strategy": { "enum": ["has_next_selector", "fixed_page_size", "none"] },
+        "page_size": { "type": "integer" }
+      }
+    },
+
+    "date_format": { "type": "string", "description": "strptime-compatible pattern for chapter_date text, or 'relative' for '3 days ago' style strings" },
+
+    "filters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "id", "label"],
+        "properties": {
+          "type":    { "enum": ["text", "select", "checkbox_group"] },
+          "id":      { "type": "string" },
+          "label":   { "type": "string" },
+          "options": { "type": "array", "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 } }
+        }
+      }
+    },
+
+    "update_strategy": { "enum": ["ALWAYS_UPDATE", "ONLY_FETCH_ONCE"] },
+
+    "deeplink": {
+      "type": "object",
+      "properties": {
+        "host": { "type": "string" },
+        "path_patterns": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+
+  "definitions": {
+    "endpoint": {
+      "type": "object",
+      "required": ["method", "path"],
+      "properties": {
+        "method": { "enum": ["GET", "POST"] },
+        "path":   { "type": "string" },
+        "form_body": {
+          "type": "object",
+          "description": "for POST endpoints (e.g. WordPress admin-ajax): static key/value pairs merged with {page}/{query} substitutions",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

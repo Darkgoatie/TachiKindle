@@ -1,0 +1,58 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.example_madara",
+  "name": "Example (Madara)",
+  "lang": "en",
+  "base_url": "https://example.com",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "theme": "madara",
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0",
+    "extra_headers": { "Referer": "https://example.com/" }
+  },
+
+  "endpoints": {
+    "popular":  { "method": "GET", "path": "/manga/?m_orderby=views&page={page}" },
+    "latest":   { "method": "GET", "path": "/manga/?m_orderby=latest&page={page}" },
+    "search":   { "method": "GET", "path": "/?s={query}&post_type=wp-manga&page={page}" },
+    "manga_details": { "method": "GET", "path": "{manga_url}" },
+    "chapter_list":  { "method": "GET", "path": "{manga_url}" },
+    "page_list":     { "method": "GET", "path": "{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": "div.page-item-detail.manga",
+    "manga_title":     { "sel": "a", "attr": "title" },
+    "manga_url":       { "sel": "a", "attr": "href" },
+    "manga_cover":      { "sel": "img", "attr": "data-src", "fallback_attr": "src" },
+    "has_next_page":   "a.nextpostslink",
+
+    "details_title":       "div.post-title h1",
+    "details_author":      "div.author-content > a",
+    "details_description": "div.description-summary div.summary__content",
+    "details_status":      { "sel": "div.summary-content", "index_of_label": "Status" },
+    "details_genres":      "div.genres-content a",
+    "details_cover":       { "sel": "div.summary_image img", "attr": "data-src", "fallback_attr": "src" },
+
+    "chapter_item":  "li.wp-manga-chapter",
+    "chapter_title": "a",
+    "chapter_url":   { "sel": "a", "attr": "href" },
+    "chapter_date":  "span.chapter-release-date",
+
+    "page_image": { "sel": "div.page-break img", "attr": "data-src", "fallback_attr": "src" }
+  },
+
+  "pagination": { "strategy": "has_next_selector" },
+
+  "date_format": "MMM dd, yyyy",
+
+  "filters": [
+    { "type": "text",   "id": "author", "label": "Author" },
+    { "type": "select", "id": "status", "label": "Status",
+      "options": [ ["", "Any"], ["end", "Completed"], ["on-going", "Ongoing"] ] }
+  ],
+
+  "update_strategy": "ALWAYS_UPDATE"
+}
