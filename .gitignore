@@ -12,9 +12,11 @@ test_navigation
 test_reader_load
 test_repo
 test_repo_store
+test_font
 tests/fixtures/*.cbz
 tests/fixtures/library/
 third_party/stb/*
 !third_party/stb/*.h
+font_preview.png
 third_party/FBInk/Release/
 *.log

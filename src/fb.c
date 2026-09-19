@@ -1,12 +1,25 @@
 #include "fb.h"
 #include "fbink.h"
+#include "font.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+/* Font search order: our own bundled copy first (deployed alongside
+   the binary via tools/deploy.sh so we don't depend on KOReader
+   being installed), then KOReader's copy as a fallback for anyone
+   who deletes the bundled file or breaks the install --
+   /mnt/base-us/koreader/fonts/noto/NotoSans-Regular.ttf is confirmed
+   present on-device (checked 2026-09-19) but not guaranteed to stay
+   that way if the user uninstalls/updates KOReader. */
+#define BUNDLED_FONT_PATH "/mnt/us/tachikindle/assets/NotoSans-Regular.ttf"
+#define FALLBACK_FONT_PATH "/mnt/base-us/koreader/fonts/noto/NotoSans-Regular.ttf"
 
 static int fbfd = -1;
 static FBInkConfig cfg;
 static FBInkState state;
 static int page_turn_counter = 0;
+static int font_ready = 0;
 
 /* Flash every 6th page turn to clear accumulated ghosting; DU for quick
    list/selection redraws, GC16 for page turns otherwise. See the plan's
@@ -23,10 +36,18 @@ int fb_init(void) {
 
     fbink_get_state(&cfg, &state);
     page_turn_counter = 0;
+
+    font_ready = (font_init(BUNDLED_FONT_PATH) == 0) ||
+                 (font_init(FALLBACK_FONT_PATH) == 0);
+    /* No font found: fb_text falls back to FBInk's built-in bitmap
+       font (see below) rather than failing fb_init outright -- a
+       missing TTF shouldn't take down the whole app. */
+
     return 0;
 }
 
 void fb_shutdown(void) {
+    if (font_ready) font_shutdown();
     if (fbfd >= 0) {
         fbink_close(fbfd);
         fbfd = -1;
@@ -56,22 +77,38 @@ void fb_blit_gray(const uint8_t *buf, int w, int h, int x, int y) {
 }
 
 void fb_text(int x, int y, const char *s, int size) {
-    FBInkConfig c = cfg;
-    c.fontmult = (unsigned char)size;
-    c.is_centered = false;
-    /* fbink_print positions by row/col (character cells), then nudges
-       by hoffset/voffset in pixels -- row/col alone can't place text
-       at an arbitrary pixel origin, and the previous version ignored
-       x/y entirely and always drew at cell (0,0), which is why small
-       buttons (e.g. the quit-zone "X") rendered with an invisible
-       label: the text landed at the screen's fixed text origin, not
-       inside the caller's box. row/col=0 plus hoffset/voffset=x/y
-       gives true pixel placement instead. */
-    c.row = 0;
-    c.col = 0;
-    c.hoffset = (short int)x;
-    c.voffset = (short int)y;
-    fbink_print(fbfd, s, &c);
+    fb_text_on_bg(x, y, s, size, 0xFF);
+}
+
+void fb_text_on_bg(int x, int y, const char *s, int size, uint8_t bg) {
+    if (!font_ready) {
+        FBInkConfig c = cfg;
+        c.fontmult = (unsigned char)size;
+        c.is_centered = false;
+        c.row = 0;
+        c.col = 0;
+        c.hoffset = (short int)x;
+        c.voffset = (short int)y;
+        fbink_print(fbfd, s, &c);
+        return;
+    }
+
+    int size_px = size * 16;
+    int w = font_measure_width(s, size_px) + 4;
+    int h = size_px + (size_px / 2);
+    if (w <= 0 || h <= 0) return;
+
+    uint8_t *scratch = malloc((size_t)w * (size_t)h);
+    if (!scratch) return;
+    /* Match whatever's already drawn at this spot (a button's fill
+       color, typically) so the glyph blend in font_draw darkens
+       against the real background instead of stamping a plain white
+       box over dark/selected buttons. */
+    memset(scratch, bg, (size_t)w * (size_t)h);
+
+    font_draw(scratch, w, h, 2, 0, s, size_px);
+    fb_blit_gray(scratch, w, h, x, y);
+    free(scratch);
 }
 
 void fb_refresh_partial(int x, int y, int w, int h) {

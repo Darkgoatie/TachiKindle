@@ -28,13 +28,14 @@ static void draw_box_border(int x, int y, int w, int h) {
 }
 
 void widget_draw_button(const widget_button_t *btn, int selected) {
-    uint8_t *fill = solid_buf(btn->w, btn->h, selected ? 0x40 : 0xFF);
+    uint8_t fill_value = selected ? 0x40 : 0xFF;
+    uint8_t *fill = solid_buf(btn->w, btn->h, fill_value);
     if (fill) {
         fb_blit_gray(fill, btn->w, btn->h, btn->x, btn->y);
         free(fill);
     }
     draw_box_border(btn->x, btn->y, btn->w, btn->h);
-    fb_text(btn->x + 12, btn->y + btn->h / 2 - 12, btn->label, TEXT_SIZE);
+    fb_text_on_bg(btn->x + 12, btn->y + btn->h / 2 - 12, btn->label, TEXT_SIZE, fill_value);
 }
 
 void widget_draw_list(const char **labels, int count, int selected,

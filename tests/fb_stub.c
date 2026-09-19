@@ -16,6 +16,9 @@ void fb_blit_gray(const uint8_t *buf, int w, int h, int x, int y) {
 void fb_text(int x, int y, const char *s, int size) {
     (void)x; (void)y; (void)s; (void)size;
 }
+void fb_text_on_bg(int x, int y, const char *s, int size, uint8_t bg) {
+    (void)x; (void)y; (void)s; (void)size; (void)bg;
+}
 void fb_refresh_partial(int x, int y, int w, int h) {
     (void)x; (void)y; (void)w; (void)h;
 }
