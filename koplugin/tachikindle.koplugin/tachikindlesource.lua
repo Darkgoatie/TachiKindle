@@ -19,6 +19,7 @@ reference this module consumes.
 
 local htmlparser = require("htmlparser")
 local socket = require("socket")
+local socket_url = require("socket.url")
 local socketutil = require("socketutil")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
@@ -43,10 +44,19 @@ function TachiKindleSource:load(path)
     return setmetatable({ def = def }, self)
 end
 
--- Fill {placeholders} in an endpoint path template.
+-- Fill {placeholders} in an endpoint path template. query is
+-- URL-encoded since it's user-typed free text; page/offset/manga_url/
+-- chapter_url are either numeric or already-URL-safe scraped links.
+-- NOTE: placeholder names use underscores (manga_url, chapter_url),
+-- and Lua's %w character class does NOT include '_' -- using %w+
+-- here silently failed to match those two placeholders at all,
+-- leaving the literal "{manga_url}" in the URL and producing an
+-- invalid URL (real symptom: "HTTP host or service not provided").
 local function fillTemplate(tpl, vars)
-    return (tpl:gsub("{(%w+)}", function(key)
-        return tostring(vars[key] or "")
+    return (tpl:gsub("{([%w_]+)}", function(key)
+        local v = tostring(vars[key] or "")
+        if key == "query" then v = socket_url.escape(v) end
+        return v
     end))
 end
 
