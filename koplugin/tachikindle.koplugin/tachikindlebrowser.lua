@@ -67,9 +67,29 @@ function TachiKindleBrowser:showRepoMenu()
                 end,
                 align = "left",
             }},
+            {{
+                text = _("Remove selected repo"),
+                callback = function()
+                    UIManager:close(dialog)
+                    self:removeSelectedRepo()
+                end,
+                align = "left",
+            }},
         },
     }
     UIManager:show(dialog)
+end
+
+function TachiKindleBrowser:removeSelectedRepo()
+    local idx = self.selected_item and self.selected_item.idx
+    if not idx then
+        UIManager:show(InfoMessage:new{ text = _("Select a repo row first."), timeout = 1 })
+        return
+    end
+    table.remove(self.plugin.repos, idx)
+    self.plugin:saveRepos()
+    self:switchItemTable(_("TachiKindle Repos"), self:genRepoItemTable())
+    UIManager:show(InfoMessage:new{ text = _("Repo removed"), timeout = 1 })
 end
 
 function TachiKindleBrowser:addRepo()
@@ -106,15 +126,47 @@ function TachiKindleBrowser:addRepo()
     input_dialog:onShowKeyboard()
 end
 
+function TachiKindleBrowser:installedSourcePath(ext_id)
+    return DataStorage:getDataDir() .. "/tachikindle/sources/" .. tostring(ext_id) .. ".tkext.json"
+end
+
+function TachiKindleBrowser:isInstalled(ext_id)
+    local f = io.open(self:installedSourcePath(ext_id), "r")
+    if not f then return false end
+    f:close()
+    return true
+end
+
+function TachiKindleBrowser:removeInstalledExtension(ext_entry)
+    local ok, err = os.remove(self:installedSourcePath(ext_entry.id))
+    if not ok then
+        UIManager:show(InfoMessage:new{ text = _("Remove failed: ") .. tostring(err), timeout = 2 })
+        return
+    end
+    UIManager:show(InfoMessage:new{ text = _("Removed: ") .. tostring(ext_entry.name or ext_entry.id), timeout = 1 })
+end
+
 -- Tapping a repo row fetches its index.json and shows the extension
 -- list; tapping an extension row downloads that .tkext.json file.
 function TachiKindleBrowser:onMenuSelect(item)
     if item.repo then
+        self.selected_item = item
         self:openRepo(item.repo)
         return true
     end
     if item.ext_entry then
         self:downloadExtension(item.repo_url, item.ext_entry)
+        return true
+    end
+    return true
+end
+
+function TachiKindleBrowser:onMenuHold(item)
+    if item.ext_entry and self:isInstalled(item.ext_entry.id) then
+        self:removeInstalledExtension(item.ext_entry)
+        if item.repo_url then
+            self:openRepo({ title = self.title, url = item.repo_url })
+        end
         return true
     end
     return true
@@ -135,18 +187,24 @@ function TachiKindleBrowser:openRepo(repo)
         return
     end
 
-    local item_table = {}
+    local item_table = {
+        {
+            text = _("(Hold installed extension to remove)"),
+            callback = function() end,
+        },
+    }
     for _, ext in ipairs(parsed.extensions) do
         if ext.id and ext.path then
+            local installed = self:isInstalled(ext.id)
             table.insert(item_table, {
-                text = string.format("%s [%s] (%s)", ext.name or ext.id,
+                text = string.format("%s%s [%s] (%s)", installed and "✓ " or "", ext.name or ext.id,
                                        ext.lang or "?", ext.content_warning or "SAFE"),
                 repo_url = repo.url,
                 ext_entry = ext,
             })
         end
     end
-    if #item_table == 0 then
+    if #item_table == 1 then
         UIManager:show(InfoMessage:new{ text = _("No extensions in this repo.") })
         return
     end

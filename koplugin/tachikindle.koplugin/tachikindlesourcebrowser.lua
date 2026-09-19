@@ -50,6 +50,10 @@ function TachiKindleSourceBrowser:sourcesDir()
     return DataStorage:getDataDir() .. "/tachikindle/sources"
 end
 
+function TachiKindleSourceBrowser:sourcePathById(source_id)
+    return self:sourcesDir() .. "/" .. tostring(source_id) .. ".tkext.json"
+end
+
 -- Loads every installed .tkext.json in sourcesDir(), returning a map
 -- of source.def.id -> loaded TachiKindleSource, so favorites (which
 -- only persist a source_id, not a live object) can be reopened.
@@ -340,6 +344,11 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         -- Favorites load chapters directly, skipping the manga-list
         -- step entirely (per the feature request: tapping a favorite
         -- goes straight to its source's chapter list).
+        self.refresh_current_list = function()
+            self.screen = SCREEN_FAVORITES
+            self:switchItemTable(_("Favorites"), self:genFavoritesItemTable())
+            UIManager:setDirty(self, "full")
+        end
         self:openManga(item.source, item.manga)
         return true
     end
@@ -352,10 +361,23 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         return true
     end
     if self.screen == SCREEN_OFFLINE and item.chapter and item.source then
+        self.refresh_current_list = function() self:showOfflineLibrary() end
         self:openChapter(item.source, item.chapter)
         return true
     end
     return true
+end
+
+function TachiKindleSourceBrowser:showSourceActions(item)
+    local dialog
+    local source = item.source
+    dialog = ButtonDialog:new{
+        buttons = {
+            {{ text = _("Remove extension"), callback = function() UIManager:close(dialog); self:removeInstalledSource(source) end, align = "left" }},
+            {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end, align = "left" }},
+        },
+    }
+    UIManager:show(dialog)
 end
 
 function TachiKindleSourceBrowser:showChapterActions(item)
@@ -379,6 +401,10 @@ end
 
 -- Long-press row actions.
 function TachiKindleSourceBrowser:onMenuHold(item)
+    if self.screen == SCREEN_SOURCE_LIST and item.source then
+        self:showSourceActions(item)
+        return true
+    end
     if (self.screen == SCREEN_CHAPTER_LIST or self.screen == SCREEN_OFFLINE) and item.chapter and item.source then
         self:showChapterActions(item)
         return true
@@ -397,6 +423,19 @@ function TachiKindleSourceBrowser:onMenuHold(item)
         UIManager:setDirty(self, "full")
     end
     return true
+end
+
+function TachiKindleSourceBrowser:removeInstalledSource(source)
+    local path = self:sourcePathById(source.def.id)
+    local ok, err = os.remove(path)
+    if not ok then
+        UIManager:show(InfoMessage:new{ text = _("Remove failed: ") .. tostring(err), timeout = 2 })
+        return
+    end
+    UIManager:show(InfoMessage:new{ text = _("Removed extension: ") .. tostring(source.def.name or source.def.id), timeout = 1 })
+    self.screen = SCREEN_SOURCE_LIST
+    self:switchItemTable(_("Sources"), self:genSourceItemTable())
+    UIManager:setDirty(self, "full")
 end
 
 function TachiKindleSourceBrowser:queueChapter(source, chapter, priority)
@@ -466,11 +505,25 @@ function TachiKindleSourceBrowser:openSource(source, page)
     end
 
     self.screen = SCREEN_MANGA_LIST
-    local item_table = {}
+    local item_table = {
+        {
+            text = _("← Back to Sources"),
+            callback = function()
+                self.screen = SCREEN_SOURCE_LIST
+                self:switchItemTable(_("Sources"), self:genSourceItemTable())
+                UIManager:setDirty(self, "full")
+            end,
+        },
+    }
     if page == 1 then
         table.insert(item_table, {
             text = _("🔍 Search…"),
             callback = function() self:promptSearch(source) end,
+        })
+    else
+        table.insert(item_table, {
+            text = _("← Prev page"),
+            callback = function() self:openSource(source, page - 1) end,
         })
     end
     local manga_rows = self:buildMangaItemTable(source, list)
@@ -538,7 +591,18 @@ function TachiKindleSourceBrowser:runSearch(source, query, page)
     end
 
     self.screen = SCREEN_MANGA_LIST
-    local item_table = {}
+    local item_table = {
+        {
+            text = _("← Back to Source"),
+            callback = function() self:openSource(source, 1) end,
+        },
+    }
+    if page > 1 then
+        table.insert(item_table, {
+            text = _("← Prev page"),
+            callback = function() self:runSearch(source, query, page - 1) end,
+        })
+    end
     local manga_rows = self:buildMangaItemTable(source, list)
     for _, row in ipairs(manga_rows) do table.insert(item_table, row) end
     if has_next then
@@ -571,6 +635,18 @@ function TachiKindleSourceBrowser:openManga(source, manga)
 
     self.screen = SCREEN_CHAPTER_LIST
     local item_table = {
+        {
+            text = _("← Back"),
+            callback = function()
+                if self.refresh_current_list then
+                    self.refresh_current_list()
+                else
+                    self.screen = SCREEN_SOURCE_LIST
+                    self:switchItemTable(_("Sources"), self:genSourceItemTable())
+                    UIManager:setDirty(self, "full")
+                end
+            end,
+        },
         {
             text = _("Hold a chapter for offline actions"),
             callback = function() end,
