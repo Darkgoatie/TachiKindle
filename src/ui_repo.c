@@ -92,37 +92,99 @@ void ui_repo_list_handle(app_t *app, const ci_event_t *ev) {
     }
 }
 
-/* Minimal on-screen keyboard: lowercase QWERTY rows plus a symbol row
-   with exactly what a URL needs (: / . - _) since that's the only
-   text this app ever asks the user to type. No shift/uppercase --
-   repo URLs don't need it, and skipping it avoids a second keyboard
-   layout to draw and hit-test. Rows are simple fixed grids, not
-   variable-width per key, so hit-testing is just integer division.
-   Anchored to the bottom of the screen (like KOReader's own
-   VirtualKeyboard) rather than a fixed offset from the top, so it
-   sits where a real keyboard would and doesn't waste vertical space
-   on devices with a taller/shorter panel. */
-#define KB_KEY_W 58
+/* On-screen keyboard, geometry copied from KOReader's real English
+   layout (frontend/ui/data/keyboardlayouts/en_keyboard.lua, fetched
+   2026-09-19) -- same 5-row grid, same per-key width ratios (Shift/
+   Backspace at 1.5x, spacebar at 3x a standard key), same row
+   membership (digits row, QWERTY/ASDFGHJKL/ZXCVBNM rows, bottom row
+   with symbol-toggle/globe/space/arrows/enter). What's deliberately
+   NOT copied: KOReader's Shift/Sym layer switching, its swipe-per-key
+   alternate characters, hold-popups, and multi-language layout
+   support -- this app only ever needs to type a URL, so this is a
+   single fixed lowercase+symbol layer, not the full interaction
+   model. See ui_repo.h for that scope decision.
+
+   Units: a "key width unit" is the base single-key width; a row's
+   total unit count times KB_UNIT_PX gives the row's pixel width, so
+   rows with different total units (KOReader's rows are NOT all the
+   same total either) size proportionally instead of a fixed grid. */
+#define KB_UNIT_PX 54
 #define KB_KEY_H 58
-#define KB_ROWS 4
-#define KB_SYM_ROW 1 /* symbol/backspace/go row, drawn below the letter rows */
-#define KB_TOTAL_ROWS (KB_ROWS + KB_SYM_ROW)
+#define KB_ROWS 5
 #define KB_ORIGIN_X 10
 #define KB_BOTTOM_MARGIN 20
 
+typedef struct {
+    const char *label; /* multi-char labels (Bksp, Enter, Space) render as-is */
+    int         emits; /* character appended on tap; -1=backspace, -2=commit, 0=inert placeholder */
+    float       width; /* in key-width units, matches KOReader's `width =` field */
+} kb_key_t;
+
+/* clang-format off */
+static const kb_key_t kb_row1[] = { /* digits, 10 units total */
+    {"1",'1',1},{"2",'2',1},{"3",'3',1},{"4",'4',1},{"5",'5',1},
+    {"6",'6',1},{"7",'7',1},{"8",'8',1},{"9",'9',1},{"0",'0',1},
+};
+static const kb_key_t kb_row2[] = { /* qwertyuiop, 10 units */
+    {"q",'q',1},{"w",'w',1},{"e",'e',1},{"r",'r',1},{"t",'t',1},
+    {"y",'y',1},{"u",'u',1},{"i",'i',1},{"o",'o',1},{"p",'p',1},
+};
+static const kb_key_t kb_row3[] = { /* asdfghjkl, 9 units (KOReader's is too) */
+    {"a",'a',1},{"s",'s',1},{"d",'d',1},{"f",'f',1},{"g",'g',1},
+    {"h",'h',1},{"j",'j',1},{"k",'k',1},{"l",'l',1},
+};
+static const kb_key_t kb_row4[] = { /* Shift(1.5)+zxcvbnm+Bksp(1.5), 10 units */
+    {"^",   0,  1.5f}, /* no shift layer -- kept as a visual placeholder key */
+    {"z",'z',1},{"x",'x',1},{"c",'c',1},{"v",'v',1},
+    {"b",'b',1},{"n",'n',1},{"m",'m',1},
+    {"Bksp", -1, 1.5f}, /* emits=-1 is the backspace sentinel */
+};
+static const kb_key_t kb_row5[] = { /* sym-placeholder, :, space(3), ., Add(2) */
+    {":",':',1},{"/",'/',1},{".", '.', 1},
+    {"Space", ' ', 3.0f},
+    {"-",'-',1},{"_",'_',1},
+    {"Add", -2, 2.0f}, /* emits=-2 is the "commit URL" sentinel */
+};
+/* clang-format on */
+
+static const kb_key_t *kb_rows[KB_ROWS] = { kb_row1, kb_row2, kb_row3, kb_row4, kb_row5 };
+static const int kb_row_lens[KB_ROWS] = {
+    sizeof(kb_row1) / sizeof(kb_row1[0]), sizeof(kb_row2) / sizeof(kb_row2[0]),
+    sizeof(kb_row3) / sizeof(kb_row3[0]), sizeof(kb_row4) / sizeof(kb_row4[0]),
+    sizeof(kb_row5) / sizeof(kb_row5[0]),
+};
+
 static int kb_origin_y(void) {
-    return fb_height() - KB_BOTTOM_MARGIN - KB_TOTAL_ROWS * KB_KEY_H;
+    return fb_height() - KB_BOTTOM_MARGIN - KB_ROWS * KB_KEY_H;
 }
 
-static const char *kb_rows[KB_ROWS] = {
-    "1234567890",
-    "qwertyuiop",
-    "asdfghjkl",
-    "zxcvbnm",
-};
-/* Symbol row lives past the letter rows at a fixed slot, plus
-   Backspace and Go occupy the last two slots of that same row. */
-static const char kb_symbols[] = ":/.-_";
+/* Shared geometry walk used by both drawing and hit-testing so they
+   can never disagree about where a key actually is -- calls `visit`
+   once per key with its pixel rect; visit returns nonzero to stop
+   the walk early (used by hit-testing to short-circuit on a match). */
+typedef int (*kb_visit_fn)(const kb_key_t *key, int x, int y, int w, int h, void *ctx);
+
+static int kb_walk(kb_visit_fn visit, void *ctx) {
+    int origin_y = kb_origin_y();
+    for (int r = 0; r < KB_ROWS; r++) {
+        int x = KB_ORIGIN_X;
+        int y = origin_y + r * KB_KEY_H;
+        for (int c = 0; c < kb_row_lens[r]; c++) {
+            const kb_key_t *k = &kb_rows[r][c];
+            int w = (int)(k->width * KB_UNIT_PX);
+            if (visit(k, x, y, w, KB_KEY_H, ctx)) return 1;
+            x += w;
+        }
+    }
+    return 0;
+}
+
+static int kb_draw_visit(const kb_key_t *key, int x, int y, int w, int h, void *ctx) {
+    (void)ctx;
+    widget_button_t btn = { key->label, x, y, w - 4, h - 4 };
+    widget_draw_button(&btn, key->emits == -2 /* highlight "Add" like KOReader's Enter accent */);
+    return 0;
+}
 
 void ui_repo_add_draw(app_t *app) {
     fb_clear();
@@ -130,79 +192,19 @@ void ui_repo_add_draw(app_t *app) {
     fb_text(20, 20, "Enter repo URL:", 3);
     fb_text(20, 60, app->url_entry[0] ? app->url_entry : "https://", 2);
 
-    int origin_y = kb_origin_y();
-
-    for (int r = 0; r < KB_ROWS; r++) {
-        const char *row = kb_rows[r];
-        int len = (int)strlen(row);
-        for (int c = 0; c < len; c++) {
-            char label[2] = { row[c], '\0' };
-            widget_button_t btn = {
-                .label = label,
-                .x = KB_ORIGIN_X + c * KB_KEY_W,
-                .y = origin_y + r * KB_KEY_H,
-                .w = KB_KEY_W - 4,
-                .h = KB_KEY_H - 4,
-            };
-            widget_draw_button(&btn, 0);
-        }
-    }
-
-    int sym_row_y = origin_y + KB_ROWS * KB_KEY_H;
-    int n_syms = (int)strlen(kb_symbols);
-    for (int c = 0; c < n_syms; c++) {
-        char label[2] = { kb_symbols[c], '\0' };
-        widget_button_t btn = {
-            .label = label,
-            .x = KB_ORIGIN_X + c * KB_KEY_W,
-            .y = sym_row_y,
-            .w = KB_KEY_W - 4,
-            .h = KB_KEY_H - 4,
-        };
-        widget_draw_button(&btn, 0);
-    }
-
-    widget_button_t back_btn = {
-        .label = "<-", .x = KB_ORIGIN_X + n_syms * KB_KEY_W, .y = sym_row_y,
-        .w = KB_KEY_W - 4, .h = KB_KEY_H - 4,
-    };
-    widget_draw_button(&back_btn, 0);
-
-    widget_button_t go_btn = {
-        .label = "Add", .x = KB_ORIGIN_X + (n_syms + 1) * KB_KEY_W, .y = sym_row_y,
-        .w = KB_KEY_W * 2 - 4, .h = KB_KEY_H - 4,
-    };
-    widget_draw_button(&go_btn, 1);
+    kb_walk(kb_draw_visit, NULL);
 
     fb_refresh_full();
 }
 
-/* Maps a tap coordinate to whichever key occupies that cell, or -1 /
-   a sentinel char for "no key here" / "backspace" / "go". Returns 1
-   and fills *out_char if a letter/symbol key was hit, 0 otherwise --
-   caller checks the two special zones (back_btn, go_btn) separately
-   since they aren't single characters. */
-static int kb_hit_char(int x, int y, char *out_char) {
-    int origin_y = kb_origin_y();
-    if (y < origin_y) return 0;
-    int row = (y - origin_y) / KB_KEY_H;
-    int col = (x - KB_ORIGIN_X) / KB_KEY_W;
-    if (col < 0) return 0;
+typedef struct { int x, y; int emits; int found; } kb_hit_ctx;
 
-    if (row < KB_ROWS) {
-        const char *r = kb_rows[row];
-        if (col < (int)strlen(r)) {
-            *out_char = r[col];
-            return 1;
-        }
-        return 0;
-    }
-    if (row == KB_ROWS) {
-        int n_syms = (int)strlen(kb_symbols);
-        if (col < n_syms) {
-            *out_char = kb_symbols[col];
-            return 1;
-        }
+static int kb_hit_visit(const kb_key_t *key, int x, int y, int w, int h, void *ctx_) {
+    kb_hit_ctx *ctx = ctx_;
+    if (ctx->x >= x && ctx->x < x + w && ctx->y >= y && ctx->y < y + h) {
+        ctx->emits = key->emits;
+        ctx->found = 1;
+        return 1;
     }
     return 0;
 }
@@ -214,33 +216,28 @@ void ui_repo_add_handle(app_t *app, const ci_event_t *ev) {
     }
     if (ev->type != EV_TAP) return;
 
-    int sym_row_y = kb_origin_y() + KB_ROWS * KB_KEY_H;
-    int n_syms = (int)strlen(kb_symbols);
-    int back_x0 = KB_ORIGIN_X + n_syms * KB_KEY_W;
-    int go_x0 = KB_ORIGIN_X + (n_syms + 1) * KB_KEY_W;
+    kb_hit_ctx ctx = { ev->x, ev->y, 0, 0 };
+    kb_walk(kb_hit_visit, &ctx);
+    if (!ctx.found) return;
 
-    if (ev->y >= sym_row_y && ev->y < sym_row_y + KB_KEY_H) {
-        if (ev->x >= back_x0 && ev->x < go_x0) {
-            if (app->url_entry_len > 0) app->url_entry[--app->url_entry_len] = '\0';
-            return;
-        }
-        if (ev->x >= go_x0) {
-            if (app->url_entry_len > 0) {
-                repo_store_add(&g_store, app->url_entry);
-                repo_store_save(&g_store, REPOS_JSON_PATH);
-            }
-            app->screen = SCREEN_REPO_LIST;
-            ui_repo_enter_list(app);
-            return;
-        }
+    if (ctx.emits == -1) { /* Bksp */
+        if (app->url_entry_len > 0) app->url_entry[--app->url_entry_len] = '\0';
+        return;
     }
-
-    char ch;
-    if (kb_hit_char(ev->x, ev->y, &ch)) {
-        if (app->url_entry_len < APP_URL_ENTRY_MAX - 1) {
-            app->url_entry[app->url_entry_len++] = ch;
-            app->url_entry[app->url_entry_len] = '\0';
+    if (ctx.emits == -2) { /* Add */
+        if (app->url_entry_len > 0) {
+            repo_store_add(&g_store, app->url_entry);
+            repo_store_save(&g_store, REPOS_JSON_PATH);
         }
+        app->screen = SCREEN_REPO_LIST;
+        ui_repo_enter_list(app);
+        return;
+    }
+    if (ctx.emits == 0) return; /* placeholder key (Shift), does nothing in this scope */
+
+    if (app->url_entry_len < APP_URL_ENTRY_MAX - 1) {
+        app->url_entry[app->url_entry_len++] = ctx.emits;
+        app->url_entry[app->url_entry_len] = '\0';
     }
 }
 
