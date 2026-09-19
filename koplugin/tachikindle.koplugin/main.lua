@@ -88,6 +88,12 @@ function TachiKindle:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = _("Offline Library"),
+                callback = function()
+                    self:showOfflineLibrary()
+                end,
+            },
+            {
                 text = _("Manage Repos"),
                 callback = function()
                     self:showRepoList()
@@ -126,6 +132,22 @@ function TachiKindle:showFavorites()
         end,
     }
     UIManager:show(self.favorites_browser)
+end
+
+function TachiKindle:showOfflineLibrary()
+    self:loadSettings()
+    self.offline_browser = TachiKindleSourceBrowser:new{
+        title = _("Offline Library"),
+        start_screen = "offline",
+        is_popout = false,
+        is_borderless = true,
+        title_bar_fm_style = true,
+        close_callback = function()
+            UIManager:close(self.offline_browser)
+            self.offline_browser = nil
+        end,
+    }
+    UIManager:show(self.offline_browser)
 end
 
 function TachiKindle:onTachiKindleOpen()
