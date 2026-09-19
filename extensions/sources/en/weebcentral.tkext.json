@@ -47,7 +47,7 @@
 
     "chapter_item":  "div[x-data] > a",
     "chapter_title": "span.flex > span",
-    "chapter_url":   { "sel": "a", "attr": "href" },
+    "chapter_url":   { "sel": "self", "attr": "href" },
     "chapter_date":  "time",
 
     "page_image": { "sel": "section img", "attr": "src" }
