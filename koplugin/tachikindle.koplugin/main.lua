@@ -20,6 +20,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local TachiKindleBrowser = require("tachikindlebrowser")
+local TachiKindleSourceBrowser = require("tachikindlesourcebrowser")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local http = require("socket.http")
@@ -73,15 +74,41 @@ function TachiKindle:addToMainMenu(menu_items)
     menu_items.tachikindle = {
         text = _("TachiKindle"),
         sorting_hint = "more_tools",
-        callback = function()
-            self:onTachiKindleOpen()
+        sub_item_table = {
+            {
+                text = _("Browse Sources"),
+                callback = function()
+                    self:showSourceList()
+                end,
+            },
+            {
+                text = _("Manage Repos"),
+                callback = function()
+                    self:showRepoList()
+                end,
+            },
+        },
+    }
+end
+
+function TachiKindle:showSourceList()
+    self:loadSettings()
+    self.source_browser = TachiKindleSourceBrowser:new{
+        title = _("Sources"),
+        is_popout = false,
+        is_borderless = true,
+        title_bar_fm_style = true,
+        close_callback = function()
+            UIManager:close(self.source_browser)
+            self.source_browser = nil
         end,
     }
+    UIManager:show(self.source_browser)
 end
 
 function TachiKindle:onTachiKindleOpen()
     self:loadSettings()
-    self:showRepoList()
+    self:showSourceList()
 end
 
 function TachiKindle:showRepoList()

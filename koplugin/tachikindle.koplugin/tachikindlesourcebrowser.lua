@@ -1,0 +1,148 @@
+--[[--
+TachiKindleSourceBrowser: browse a downloaded/installed .tkext.json
+source live -- manga list -> chapter list -> read online. This is
+the second Menu-based browser, separate from TachiKindleBrowser
+(which only handles the repo/download side), following the same
+"Menu:extend, tap a row to go deeper" shape borrowed from opdsbrowser.
+
+@module koplugin.TachiKindleSourceBrowser
+--]]--
+
+local ButtonDialog = require("ui/widget/buttondialog")
+local DataStorage = require("datastorage")
+local InfoMessage = require("ui/widget/infomessage")
+local Menu = require("ui/widget/menu")
+local UIManager = require("ui/uimanager")
+local TachiKindleSource = require("tachikindlesource")
+local TachiKindleReader = require("tachikindlereader")
+local lfs = require("libs/libkoreader-lfs")
+local _ = require("gettext")
+
+local TachiKindleSourceBrowser = Menu:extend{
+    name = "tachikindlesourcebrowser",
+    is_popout = false,
+    is_borderless = true,
+}
+
+-- Screen kinds this single Menu instance cycles through, so tap
+-- handling in onMenuSelect knows what a row tap actually means.
+local SCREEN_SOURCE_LIST = "source_list"
+local SCREEN_MANGA_LIST = "manga_list"
+local SCREEN_CHAPTER_LIST = "chapter_list"
+
+function TachiKindleSourceBrowser:init()
+    self.screen = SCREEN_SOURCE_LIST
+    self.item_table = self:genSourceItemTable()
+    Menu.init(self)
+end
+
+function TachiKindleSourceBrowser:sourcesDir()
+    return DataStorage:getDataDir() .. "/tachikindle/sources"
+end
+
+function TachiKindleSourceBrowser:genSourceItemTable()
+    local dir = self:sourcesDir()
+    local item_table = {}
+    if lfs.attributes(dir, "mode") == "directory" then
+        for name in lfs.dir(dir) do
+            if name:match("%.tkext%.json$") then
+                local path = dir .. "/" .. name
+                local source, err = TachiKindleSource:load(path)
+                if source then
+                    table.insert(item_table, {
+                        text = source.def.name or name,
+                        source = source,
+                    })
+                end
+            end
+        end
+    end
+    return item_table
+end
+
+function TachiKindleSourceBrowser:onMenuSelect(item)
+    if item.callback then
+        item.callback()
+        return true
+    end
+    if self.screen == SCREEN_SOURCE_LIST and item.source then
+        self:openSource(item.source)
+        return true
+    end
+    if self.screen == SCREEN_MANGA_LIST and item.manga then
+        self:openManga(item.source, item.manga)
+        return true
+    end
+    if self.screen == SCREEN_CHAPTER_LIST and item.chapter then
+        self:openChapter(item.source, item.chapter)
+        return true
+    end
+    return true
+end
+
+function TachiKindleSourceBrowser:openSource(source, page)
+    page = page or 1
+    UIManager:show(InfoMessage:new{ text = _("Loading…"), timeout = 1 })
+    local list, err, has_next = source:fetchMangaList("popular", page)
+    if not list then
+        UIManager:show(InfoMessage:new{ text = _("Failed to load source: ") .. tostring(err) })
+        return
+    end
+    if #list == 0 then
+        UIManager:show(InfoMessage:new{ text = _("No manga found.") })
+        return
+    end
+
+    self.screen = SCREEN_MANGA_LIST
+    local item_table = {}
+    for _, m in ipairs(list) do
+        table.insert(item_table, {
+            text = m.title or m.url,
+            source = source,
+            manga = m,
+        })
+    end
+    if has_next then
+        table.insert(item_table, {
+            text = _("Next page →"),
+            callback = function() self:openSource(source, page + 1) end,
+        })
+    end
+    self:switchItemTable(source.def.name, item_table)
+end
+
+function TachiKindleSourceBrowser:openManga(source, manga)
+    UIManager:show(InfoMessage:new{ text = _("Loading chapters…"), timeout = 1 })
+    local chapters, err = source:fetchChapterList(manga.url)
+    if not chapters then
+        UIManager:show(InfoMessage:new{ text = _("Failed to load chapters: ") .. tostring(err) })
+        return
+    end
+    if #chapters == 0 then
+        UIManager:show(InfoMessage:new{ text = _("No chapters found.") })
+        return
+    end
+
+    self.screen = SCREEN_CHAPTER_LIST
+    local item_table = {}
+    for _, c in ipairs(chapters) do
+        table.insert(item_table, {
+            text = c.date and (c.title .. "  (" .. c.date .. ")") or c.title,
+            source = source,
+            chapter = c,
+        })
+    end
+    self:switchItemTable(manga.title, item_table)
+end
+
+function TachiKindleSourceBrowser:openChapter(source, chapter)
+    UIManager:show(InfoMessage:new{ text = _("Loading pages…"), timeout = 1 })
+    local pages, err = source:fetchPageList(chapter.url)
+    if not pages then
+        UIManager:show(InfoMessage:new{ text = _("Failed to load pages: ") .. tostring(err) })
+        return
+    end
+    TachiKindleReader.show(source, pages, chapter.title)
+end
+
+return TachiKindleSourceBrowser
