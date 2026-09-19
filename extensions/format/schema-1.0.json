@@ -36,7 +36,7 @@
 
     "selectors": {
       "type": "object",
-      "description": "CSS selectors evaluated by the built-in mini CSS engine (tag, .class, #id, [attr], [attr=val], descendant combinator only -- see references/css-subset.md for the exact supported grammar). Each value is either a bare selector string (text content is extracted) or a {sel, attr, fallback_attr?} object (an attribute is extracted instead).",
+      "description": "CSS selectors evaluated via KOReader's bundled htmlparser (common/htmlparser.lua) -- real tag/.class/#id/[attr]/[attr=val] support plus descendant/child combinators, see htmlparser's ElementNode:select() grammar. Each value is either a bare selector string (text content is extracted) or a {sel, attr, fallback_attr?} object (an attribute is extracted instead). sel: 'self' (or omitting sel) means read the attribute directly off the matched list-item node itself, for sites whose list-item selector already IS the link element.",
       "required": [
         "manga_list_item", "manga_title", "manga_url",
         "details_title", "chapter_item", "chapter_title", "chapter_url",

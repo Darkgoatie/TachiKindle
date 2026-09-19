@@ -85,13 +85,20 @@ function TachiKindleSource:fetch(url)
 end
 
 -- Run a selector (string or {sel,attr,fallback_attr}) against a
--- parsed node, returning text or an attribute value.
+-- parsed node, returning text or an attribute value. sel == "self"
+-- (or omitted) means "read the attribute off the node passed in
+-- directly" -- needed when the list-item selector already IS the
+-- link (e.g. WeebCentral's "article > section > a" list items),
+-- so there's no child <a> to select into.
 local function applySelector(node, selector)
     if type(selector) == "string" then
         local found = node:select(selector)[1]
         return found and found:textonly():gsub("^%s+", ""):gsub("%s+$", "") or nil
     end
-    local found = node:select(selector.sel)[1]
+    local found = node
+    if selector.sel and selector.sel ~= "self" then
+        found = node:select(selector.sel)[1]
+    end
     if not found then return nil end
     local v = found.attributes[selector.attr]
     if (not v or v == "") and selector.fallback_attr then

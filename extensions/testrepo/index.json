@@ -9,6 +9,14 @@
       "version_code": 1,
       "content_warning": "SAFE",
       "path": "sources/en/example_madara.tkext.json"
+    },
+    {
+      "id": "en.weebcentral",
+      "name": "Weeb Central",
+      "lang": "en",
+      "version_code": 1,
+      "content_warning": "MIXED",
+      "path": "sources/en/weebcentral.tkext.json"
     }
   ]
 }
