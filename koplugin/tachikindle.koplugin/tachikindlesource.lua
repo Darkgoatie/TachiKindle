@@ -107,9 +107,20 @@ local function applySelector(node, selector)
     return v
 end
 
--- Popular/latest manga list -> { {title, url, cover}, ... }
-function TachiKindleSource:fetchMangaList(endpoint_name, page)
-    local url, err = self:resolveUrl(endpoint_name, { page = page or 1 })
+-- Popular/latest/search manga list -> { {title, url, cover}, ... }.
+-- offset is derived from page (1-indexed) using a fixed page size,
+-- since WeebCentral's real API takes offset=(page-1)*pageSize, not
+-- a page number -- passing page directly into {offset} silently
+-- skipped/missed real results (confirmed: page=1 produced offset=1,
+-- which returned wrong/empty results against the live site).
+local SEARCH_PAGE_SIZE = 32
+function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
+    page = page or 1
+    local url, err = self:resolveUrl(endpoint_name, {
+        page = page,
+        offset = (page - 1) * SEARCH_PAGE_SIZE,
+        query = query or "",
+    })
     if not url then return nil, err end
     local body, ferr = self:fetch(url)
     if not body then return nil, ferr end

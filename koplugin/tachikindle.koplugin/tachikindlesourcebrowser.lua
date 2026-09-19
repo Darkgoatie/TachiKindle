@@ -11,6 +11,7 @@ the second Menu-based browser, separate from TachiKindleBrowser
 local ButtonDialog = require("ui/widget/buttondialog")
 local DataStorage = require("datastorage")
 local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local UIManager = require("ui/uimanager")
 local TachiKindleSource = require("tachikindlesource")
@@ -99,6 +100,12 @@ function TachiKindleSourceBrowser:openSource(source, page)
 
     self.screen = SCREEN_MANGA_LIST
     local item_table = {}
+    if page == 1 then
+        table.insert(item_table, {
+            text = _("🔍 Search…"),
+            callback = function() self:promptSearch(source) end,
+        })
+    end
     for _, m in ipairs(list) do
         table.insert(item_table, {
             text = m.title or m.url,
@@ -113,6 +120,76 @@ function TachiKindleSourceBrowser:openSource(source, page)
         })
     end
     self:switchItemTable(source.def.name, item_table)
+    UIManager:setDirty(self, "full")
+end
+
+-- Shows a dialog to search this source over the network -- separate
+-- from the "popular" list shown by default, following the same
+-- shape as koreader's real opds.koplugin OPDSBrowser:searchCatalog.
+function TachiKindleSourceBrowser:promptSearch(source)
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Search ") .. source.def.name,
+        input_hint = _("Manga title…"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local query = input_dialog:getInputText()
+                        UIManager:close(input_dialog)
+                        if query and query ~= "" then
+                            self:runSearch(source, query, 1)
+                        end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
+function TachiKindleSourceBrowser:runSearch(source, query, page)
+    local loading = InfoMessage:new{ text = _("Searching…") }
+    UIManager:show(loading)
+    UIManager:forceRePaint()
+    local list, err, has_next = source:fetchMangaList("search", page, query)
+    UIManager:close(loading)
+
+    if not list then
+        UIManager:show(InfoMessage:new{ text = _("Search failed: ") .. tostring(err) })
+        return
+    end
+    if #list == 0 then
+        UIManager:show(InfoMessage:new{ text = _("No results for \"") .. query .. "\"." })
+        return
+    end
+
+    self.screen = SCREEN_MANGA_LIST
+    local item_table = {}
+    for _, m in ipairs(list) do
+        table.insert(item_table, {
+            text = m.title or m.url,
+            source = source,
+            manga = m,
+        })
+    end
+    if has_next then
+        table.insert(item_table, {
+            text = _("Next page →"),
+            callback = function() self:runSearch(source, query, page + 1) end,
+        })
+    end
+    self:switchItemTable(_("Search: ") .. query, item_table)
     UIManager:setDirty(self, "full")
 end
 
