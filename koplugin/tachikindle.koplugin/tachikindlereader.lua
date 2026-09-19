@@ -17,15 +17,30 @@ MuPDF -- covers what manga sites actually serve.
 
 local ImageViewer = require("ui/widget/imageviewer")
 local RenderImage = require("ui/renderimage")
+local Blitbuffer = require("ffi/blitbuffer")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
 
 local TachiKindleReader = {}
 
+-- A small blank placeholder bitmap, used whenever a page's bytes
+-- fail to fetch or fail to decode. ImageWidget:_render() calls
+-- error("cannot render image") when handed nil (confirmed via real
+-- crash log: fetching a chapter with even one bad/undecodable page
+-- crashed the whole reader, not just that page) -- returning a real,
+-- if blank, BlitBuffer instead means one broken page shows an empty
+-- square rather than taking down the app.
+local function placeholderImage()
+    local bb = Blitbuffer.new(600, 800, Blitbuffer.TYPE_BBRGB32)
+    bb:fill(Blitbuffer.COLOR_WHITE)
+    return bb
+end
+
 -- source: a loaded TachiKindleSource instance
+-- chapter_url: canonical chapter URL used as cache key
 -- page_urls: string array of page image URLs (from fetchPageList)
-function TachiKindleReader.show(source, page_urls, chapter_title)
+function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title)
     if #page_urls == 0 then
         UIManager:show(InfoMessage:new{ text = _("This chapter has no pages.") })
         return
@@ -36,19 +51,19 @@ function TachiKindleReader.show(source, page_urls, chapter_title)
     })
     for i, url in ipairs(page_urls) do
         images_list[i] = function()
-            local body, err = source:fetch(url)
+            local body, err = source:fetchChapterPage(chapter_url, i, url)
             if not body then
                 UIManager:show(InfoMessage:new{
                     text = _("Failed to load page ") .. i .. ": " .. tostring(err),
                 })
-                return nil
+                return placeholderImage()
             end
-            local bb = RenderImage:renderImageData(body, #body)
-            if not bb then
+            local ok, bb = pcall(function() return RenderImage:renderImageData(body, #body) end)
+            if not ok or not bb then
                 UIManager:show(InfoMessage:new{
                     text = _("Could not decode page ") .. i,
                 })
-                return nil
+                return placeholderImage()
             end
             return bb
         end
@@ -57,13 +72,30 @@ function TachiKindleReader.show(source, page_urls, chapter_title)
     -- functions, not the final decoded images -- give it explicitly.
     images_list.image_disposable = true
 
-    UIManager:show(ImageViewer:new{
+    local viewer = ImageViewer:new{
         image = images_list,
         images_list_nb = #page_urls,
         fullscreen = true,
-        with_title_bar = true,
+        -- Start clean (no giant chapter bar). A center tap toggles controls,
+        -- and we mirror the title bar visibility to that same toggle so the
+        -- top bar appears only on demand.
+        with_title_bar = false,
         title_text = chapter_title or "",
-    })
+    }
+
+    local _orig_onTap = viewer.onTap
+    function viewer:onTap(arg, ges)
+        local handled = _orig_onTap(self, arg, ges)
+        -- ImageViewer toggles buttons on middle-tap; keep title bar in sync
+        -- so the chapter bar opens/closes with that same click.
+        if self.with_title_bar ~= self.buttons_visible then
+            self.with_title_bar = self.buttons_visible
+            self:update()
+        end
+        return handled
+    end
+
+    UIManager:show(viewer)
 end
 
 return TachiKindleReader
