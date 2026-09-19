@@ -24,11 +24,11 @@ typedef struct {
     size_t count;
 } repo_index;
 
-/* Fetches raw bytes from `url` via system curl into a heap buffer.
-   Returns 0 and sets *out/*out_len on success, -1 on failure -- curl
-   missing, non-2xx exit, or timeout. max_bytes bounds the response
-   size to guard against a malicious/broken server; 0 means no cap.
-   Caller frees *out. */
+/* Fetches raw bytes from a URL via system curl into a heap buffer.
+   Returns 0 and sets output/output-length on success, nonzero on
+   failure -- e.g. curl missing, non-2xx exit, or timeout. max_bytes
+   bounds the response size to guard against a malicious/broken
+   server; 0 means no cap. Caller frees *out. */
 int repo_http_get(const char *url, long timeout_s, size_t max_bytes,
                    char **out, size_t *out_len);
 

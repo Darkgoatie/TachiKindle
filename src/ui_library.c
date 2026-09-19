@@ -1,8 +1,11 @@
 #include "ui_library.h"
 #include "ui_chapters.h"
+#include "ui_repo.h"
 #include "fb.h"
 #include "widget.h"
 #include <stdlib.h>
+
+#define REPO_ZONE_PX 90
 
 /* v1 renders the library as a scrollable text list of series names.
    The plan's cover-thumbnail grid is deferred: thumbnail generation
@@ -15,6 +18,15 @@ void ui_library_draw(app_t *app) {
 
     if (app->lib.n_series == 0) {
         widget_toast("No comics found in /mnt/us/tachikindle/library");
+    }
+
+    widget_button_t repo_btn = {
+        .label = "Repos", .x = fb_width() - REPO_ZONE_PX - 4, .y = 4,
+        .w = REPO_ZONE_PX, .h = REPO_ZONE_PX - 20,
+    };
+    widget_draw_button(&repo_btn, 0);
+
+    if (app->lib.n_series == 0) {
         fb_refresh_full();
         return;
     }
@@ -31,6 +43,12 @@ void ui_library_draw(app_t *app) {
 }
 
 void ui_library_handle(app_t *app, const ci_event_t *ev) {
+    if (ev->type == EV_TAP && ev->x >= fb_width() - REPO_ZONE_PX - 4 && ev->y <= REPO_ZONE_PX) {
+        ui_repo_enter_list(app);
+        app->screen = SCREEN_REPO_LIST;
+        return;
+    }
+
     if (app->lib.n_series == 0) return;
 
     switch (ev->type) {
