@@ -59,10 +59,18 @@ void fb_text(int x, int y, const char *s, int size) {
     FBInkConfig c = cfg;
     c.fontmult = (unsigned char)size;
     c.is_centered = false;
+    /* fbink_print positions by row/col (character cells), then nudges
+       by hoffset/voffset in pixels -- row/col alone can't place text
+       at an arbitrary pixel origin, and the previous version ignored
+       x/y entirely and always drew at cell (0,0), which is why small
+       buttons (e.g. the quit-zone "X") rendered with an invisible
+       label: the text landed at the screen's fixed text origin, not
+       inside the caller's box. row/col=0 plus hoffset/voffset=x/y
+       gives true pixel placement instead. */
     c.row = 0;
     c.col = 0;
-    /* x/y offsets are honored alongside row/col per fbink_print's docs */
-    (void)x; (void)y;
+    c.hoffset = (short int)x;
+    c.voffset = (short int)y;
     fbink_print(fbfd, s, &c);
 }
 
