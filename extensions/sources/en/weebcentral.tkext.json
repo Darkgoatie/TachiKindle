@@ -1,0 +1,65 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.weebcentral",
+  "name": "Weeb Central",
+  "lang": "en",
+  "base_url": "https://weebcentral.com",
+  "version_code": 1,
+  "content_warning": "MIXED",
+  "theme": "none",
+
+  "_todo": [
+    "Real WeebCentral.kt uses one endpoint for popular/latest/search: GET /search/data?text=&limit=32&offset={page*32}&display_mode=Full+Display&sort=<value>, where <value> differs per mode ('Popularity' for popular, 'Latest Updates' for latest, empty for plain search) plus several UriFilter-driven query params (status/tag/type/official-translation/adult-content/author). This schema's {page} placeholder assumes page-number pagination, not offset math, so 'popular'/'latest' below hardcode sort= and use {page} directly in an offset-style query param as an approximation -- verify the real offset math (offset=(page-1)*32) once a live test is possible.",
+    "Chapter list is NOT at {manga_url} -- the real flow extracts a numeric seriesId from the manga URL's second path segment, then fetches GET /series/{seriesId}/full-chapter-list separately. This schema has no 'extract a path segment and build a new URL from it' primitive, so chapter_list's path below assumes {manga_url} already ends in a form appendable with /full-chapter-list, which is NOT what the real site expects -- this endpoint is very likely wrong until the runtime supports path-segment extraction.",
+    "Page list needs baseUrl + chapter path + '/images?is_prev=False&reading_style=long_strip' appended, not the raw chapter URL -- approximated below by folding those query params into the endpoint template's static path, assuming {chapter_url} is a path (not a full URL with its own query string already).",
+    "Real extension sets custom image request headers (Accept: image/avif,image/webp,*/*, Host: <image host>) and removes the default Origin header entirely -- this schema's client.extra_headers only supports static addition, not removal, and page-image fetches reuse the general 'client' headers rather than per-image overrides. Images may fail to load if weebcentral's CDN enforces those headers strictly.",
+    "Rate limited to 1 request per 2 seconds by the real extension (HTTP 429 was a real reported bug at higher rates) -- this schema has no rate_limit field, so a naive scraper here risks 429s that the real Kotlin extension avoids."
+  ],
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0",
+    "extra_headers": { "Accept": "image/avif,image/webp,*/*" }
+  },
+
+  "endpoints": {
+    "popular":  { "method": "GET", "path": "/search/data?text=&limit=32&offset={page}&display_mode=Full+Display&sort=Popularity" },
+    "latest":   { "method": "GET", "path": "/search/data?text=&limit=32&offset={page}&display_mode=Full+Display&sort=Latest+Updates" },
+    "search":   { "method": "GET", "path": "/search/data?text={query}&limit=32&offset={page}&display_mode=Full+Display" },
+    "manga_details": { "method": "GET", "path": "{manga_url}" },
+    "chapter_list":  { "method": "GET", "path": "{manga_url}/full-chapter-list" },
+    "page_list":     { "method": "GET", "path": "{chapter_url}/images?is_prev=False&reading_style=long_strip" }
+  },
+
+  "selectors": {
+    "manga_list_item": "article > section > a",
+    "manga_title":     "div:not([class])",
+    "manga_url":       { "sel": "a", "attr": "href" },
+    "manga_cover":      { "sel": "img", "attr": "src" },
+    "has_next_page":   "button",
+
+    "details_title":       "section[x-data] > section h1",
+    "details_author":      "ul > li strong",
+    "details_description": "li p",
+    "details_status":      "ul > li a",
+    "details_genres":      "ul > li a",
+    "details_cover":       { "sel": "section[x-data] img", "attr": "src" },
+
+    "chapter_item":  "div[x-data] > a",
+    "chapter_title": "span.flex > span",
+    "chapter_url":   { "sel": "a", "attr": "href" },
+    "chapter_date":  "time",
+
+    "page_image": { "sel": "section img", "attr": "src" }
+  },
+
+  "pagination": { "strategy": "has_next_selector" },
+
+  "date_format": "yyyy-MM-dd'T'HH:mm:ssXXX",
+
+  "filters": [
+    { "type": "select", "id": "status", "label": "Status",
+      "options": [ ["", "Any"], ["Ongoing", "Ongoing"], ["Complete", "Completed"], ["Hiatus", "On Hiatus"], ["Canceled", "Cancelled"] ] }
+  ],
+
+  "update_strategy": "ALWAYS_UPDATE"
+}
