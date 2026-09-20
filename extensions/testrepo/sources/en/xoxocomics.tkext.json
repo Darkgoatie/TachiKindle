@@ -1,0 +1,57 @@
+{
+  "id": "en.xoxocomics",
+  "name": "XOXO Comics",
+  "lang": "en",
+  "base_url": "https://xoxocomic.com",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "adapter": "xoxocomics",
+  "client": {
+    "user_agent": "Mozilla/5.0",
+    "extra_headers": {"Referer": "https://xoxocomic.com/"}
+  },
+  "endpoints": {
+    "popular": {"method": "GET", "path": "/hot-comic?page={page}"},
+    "latest": {"method": "GET", "path": "/comic-update?page={page}"},
+    "search": {"method": "GET", "path": "/search-comic?keyword={query}&page={page}"},
+    "manga_details": {"method": "GET", "path": "{manga_url}"},
+    "chapter_list": {"method": "GET", "path": "{manga_url}"},
+    "page_list": {"method": "GET", "path": "{chapter_url}/all"}
+  },
+  "selectors": {
+    "manga_list_item": "div.items div.item",
+    "manga_title": "h3 a",
+    "manga_url": {"sel": "h3 a", "attr": "href"},
+    "manga_cover": {"sel": "div.image img", "attr": "data-original", "fallback_attr": "src"},
+    "details_title": "article#item-detail h1",
+    "details_author": "li.author p.col-xs-8",
+    "details_status": "li.status p.col-xs-8",
+    "details_genres": "li.kind p.col-xs-8 a",
+    "details_description": "div.detail-content p",
+    "details_cover": {"sel": "div.col-image img", "attr": "data-original", "fallback_attr": "src"},
+    "chapter_item": "div.list-chapter li.row",
+    "chapter_title": "a",
+    "chapter_url": {"sel": "a", "attr": "href"},
+    "chapter_date": "div.col-xs-3",
+    "page_image": {"sel": "div.page-chapter > img", "attr": "data-original", "fallback_attr": "src"}
+  },
+  "pagination": {"strategy": "has_next_selector"},
+  "date_format": "%m/%d/%Y",
+  "_upstream": {
+    "repository": "https://github.com/keiyoushi/extensions-source",
+    "source": "src/en/xoxocomics/src/eu/kanade/tachiyomi/extension/en/xoxocomics/XoxoComics.kt",
+    "base_class": "lib-multisrc/wpcomics/src/eu/kanade/tachiyomi/multisrc/wpcomics/WPComics.kt",
+    "version_code": 5,
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/keiyoushi/extensions-source/blob/main/LICENSE",
+    "attribution": "Keiyoushi extensions-source contributors; modified as a Lua adapter for TachiKindle."
+  },
+  "_limitations": [
+    "Requires the bundled xoxocomics adapter for latest cards, union selectors, three-way lazy image fallback, deduplication and complete paginated chapter lists.",
+    "Upstream dynamic Genre/Status filters are not exposed by the current TachiKindle search API; query search is implemented.",
+    "Chapter pagination preserves DOM order, deduplicates repeated URLs, rejects cross-host links and cycles, and explicitly fails above 100 pages rather than returning a partial list.",
+    "Dates and status retain website display text; relative dates are not converted to upstream epoch timestamps.",
+    "Upstream accepts HTTP 404 image responses via an image-only interceptor. This adapter does not relax HTTP status handling; such images require a scoped transport enhancement and may fail.",
+    "No challenge bypass: live metadata probe returned HTTP 403 Cloudflare Just a moment; live parsing and reader image retrieval remain unverified."
+  ]
+}

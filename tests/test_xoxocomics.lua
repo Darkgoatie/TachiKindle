@@ -1,0 +1,112 @@
+-- Synthetic metadata fixtures only; no comic content or network access.
+-- Run from repo root with KOReader's htmlparser and LuaSocket in LUA_PATH.
+package.path = 'koplugin/tachikindle.koplugin/?.lua;' .. package.path
+local ok, adapter = pcall(require, 'adapters/xoxocomics')
+assert(ok, 'XOXO Comics adapter must load: ' .. tostring(adapter))
+local count = 0
+local function eq(actual, expected)
+    assert(actual == expected, tostring(actual) .. ' ~= ' .. tostring(expected))
+end
+local function test(name, fn) fn(); count = count + 1; print('ok ' .. name) end
+local function source(body)
+    return {def = {base_url = 'https://xoxocomic.com'}, calls = {}, fetch = function(self, url)
+        self.calls[#self.calls + 1] = url
+        if type(body) == 'table' then return body[url], body[url] == nil and 'HTTP 403' or nil end
+        return body, body == nil and 'HTTP 403' or nil
+    end}
+end
+local listing = [[<div class="items"><div class="item"><h3><a href="/comic/test">Test &amp; Friends</a></h3><div class="image"><a><img data-original="data:image/gif;base64,x" data-src="//cdn.example/cover.jpg" src="/placeholder.jpg"></a></div></div></div>]]
+test('popular selects cards and valid lazy cover fallback', function()
+    local s = source(listing .. [[<a rel="next" href="?page=2">Next</a>]])
+    local rows, err, more = adapter.fetchMangaList(s, 'popular', 1)
+    eq(err, nil); eq(#rows, 1); eq(rows[1].title, 'Test & Friends'); eq(rows[1].url, s.def.base_url .. '/comic/test')
+    eq(rows[1].cover, 'https://cdn.example/cover.jpg'); eq(more, true); eq(s.calls[1], s.def.base_url .. '/hot-comic')
+    adapter.fetchMangaList(s, 'popular', 2); eq(s.calls[2], s.def.base_url .. '/hot-comic?page=2')
+end)
+test('search encodes query without WPComics sort parameter', function()
+    local s = source(listing)
+    local rows, err, more = adapter.fetchMangaList(s, 'search', 1, 'A & B')
+    eq(#rows, 1); eq(err, nil); eq(more, false)
+    eq(s.calls[1], s.def.base_url .. '/search-comic?keyword=A%20%26%20B&page=1')
+end)
+test('latest uses li.row and data-original', function()
+    local s = source([[<ul><li class="row"><h3><a href="/comic/latest">Latest</a></h3><img data-original="/latest.jpg"></li></ul><a class="next-page">Next</a>]])
+    local rows, err, more = adapter.fetchMangaList(s, 'latest', 3)
+    eq(err, nil); eq(#rows, 1); eq(rows[1].cover, s.def.base_url .. '/latest.jpg'); eq(more, true)
+    eq(s.calls[1], s.def.base_url .. '/comic-update?page=3')
+end)
+test('network errors and unknown endpoint are explicit', function()
+    local s = source(nil)
+    local rows, err = adapter.fetchMangaList(s, 'popular', 1)
+    eq(rows, nil); eq(err, 'HTTP 403')
+    rows, err = adapter.fetchMangaList(s, 'unknown', 1)
+    eq(rows, nil); assert(err:match('unsupported')); eq(#s.calls, 1)
+end)
+test('details preserve genre, paragraphs, alternate name and lazy cover', function()
+    local s = source([[<article id="item-detail"><h1 class="title-detail">Test</h1><ul><li class="author"><p class="col-xs-8">Writer</p></li><li class="status"><p class="col-xs-8">Completed</p></li><li class="kind"><p class="col-xs-8"><a>Adventure</a><a>Comedy</a></p></li></ul><div class="col-image"><img data-original="/cover.jpg"></div><div class="detail-content"><p>First paragraph.</p><p>Second paragraph.</p></div><h2 class="other-name">Alias</h2></article>]])
+    local d, err = adapter.fetchMangaDetails(s, '/comic/test')
+    eq(err, nil); eq(d.title, 'Test'); eq(d.author, 'Writer'); eq(d.status, 'Completed')
+    eq(#d.genres, 2); eq(d.genres[2], 'Comedy'); eq(d.cover, s.def.base_url .. '/cover.jpg')
+    eq(d.description, 'First paragraph.\nSecond paragraph.\n\nOther name: Alias')
+    eq(s.calls[1], s.def.base_url .. '/comic/test')
+end)
+test('missing detail container is an error', function()
+    local d, err = adapter.fetchMangaDetails(source('<html></html>'), '/test')
+    eq(d, nil); assert(err)
+end)
+test('chapters follow pagination preserving order, skip heading, dedupe', function()
+    local s = source({
+        ['https://xoxocomic.com/comic/test'] = [[<div class="list-chapter"><ul><li class="row heading"><a href="/ignore">Heading</a></li><li class="row"><a href="/comic/test/issue-3">Issue 3</a><div class="col-xs-3">09/18/2026</div></li></ul></div><ul class="pagination"><li><a rel="next" href="?page=2">Next</a></li></ul>]],
+        ['https://xoxocomic.com/comic/test?page=2'] = [[<div class="list-chapter"><ul><li class="row"><a href="/comic/test/issue-3">Issue 3</a></li><li class="row"><a href="/comic/test/issue-2">Issue 2</a><div class="col-xs-3">2 days ago</div></li><li class="row"><a href="/comic/test/issue-1">Issue 1</a></li></ul></div>]],
+    })
+    local rows, err = adapter.fetchChapterList(s, '/comic/test')
+    eq(err, nil); eq(#rows, 3); eq(rows[1].title, 'Issue 3'); eq(rows[2].title, 'Issue 2'); eq(rows[3].title, 'Issue 1')
+    eq(rows[1].date, '09/18/2026'); eq(rows[2].date, '2 days ago'); eq(#s.calls, 2)
+    eq(rows[1].url, s.def.base_url .. '/comic/test/issue-3')
+end)
+test('chapter pagination cycle fails instead of hanging or returning partial list', function()
+    local s = source([[<ul class="pagination"><li><a rel="next" href="/comic/test">Next</a></li></ul>]])
+    local rows, err = adapter.fetchChapterList(s, '/comic/test')
+    eq(rows, nil); assert(err:match('cycle')); eq(#s.calls, 1)
+end)
+test('chapter pagination failure does not pretend partial list is complete', function()
+    local s = source({['https://xoxocomic.com/comic/test'] = [[<ul class="pagination"><li><a rel="next" href="?page=2">Next</a></li></ul>]]})
+    local rows, err = adapter.fetchChapterList(s, '/comic/test')
+    eq(rows, nil); eq(err, 'HTTP 403'); eq(#s.calls, 2)
+end)
+test('pages use union in DOM order, direct child constraint, lazy priority, dedupe', function()
+    local pages, err = adapter.parsePages(source(''), [[<body><ul><li class="blocks-gallery-item"><img data-src="//cdn.example/first.jpg"></li></ul><div class="page-chapter"><img data-original="/second.jpg" data-src="/wrong.jpg"><div><img src="/advert.jpg"></div><img src="//cdn.example/first.jpg"><img data-original="data:image/gif;base64,x" data-src="third.jpg"><img src="javascript:bad"></div></body>]], 'https://xoxocomic.com/comic/test/issue')
+    eq(err, nil); eq(#pages, 3); eq(pages[1], 'https://cdn.example/first.jpg'); eq(pages[2], 'https://xoxocomic.com/second.jpg'); eq(pages[3], 'https://xoxocomic.com/comic/test/issue/third.jpg')
+end)
+test('challenge and empty reader markup are errors, not empty success', function()
+    local body = '<html><head><title>Just a moment...</title></head><body>Enable JavaScript<script src="/cdn-cgi/challenge-platform/x"></script></body></html>'
+    local s = source(body)
+    for _, action in ipairs({'fetchMangaList', 'fetchMangaDetails', 'fetchChapterList'}) do
+        local rows, err = adapter[action](s, action == 'fetchMangaList' and 'popular' or '/test', 1)
+        eq(rows, nil); assert(err:match('challenge'))
+    end
+    local pages, err = adapter.parsePages(s, body, 'https://xoxocomic.com/test/all')
+    eq(pages, nil); assert(err:match('challenge'))
+    pages, err = adapter.parsePages(s, '<body></body>', 'https://xoxocomic.com/test/all')
+    eq(pages, nil); assert(err:match('images'))
+end)
+test('numeric HTML entities decode in metadata and URL attributes', function()
+    local s = source([[<div class="items"><div class="item"><h3><a href="/comic/test?x=1&#38;y=2">Test&#039;s &#x2014; Story</a></h3></div></div>]])
+    local rows = adapter.fetchMangaList(s, 'popular', 1)
+    eq(rows[1].title, 'Test\'s — Story'); eq(rows[1].url, s.def.base_url .. '/comic/test?x=1&y=2')
+end)
+test('chapter next link cannot switch host', function()
+    local s = source([[<ul class="pagination"><li><a rel="next" href="https://other.example/">Next</a></li></ul>]])
+    local rows, err = adapter.fetchChapterList(s, '/comic/test')
+    eq(rows, nil); assert(err:match('cross%-host')); eq(#s.calls, 1)
+end)
+test('chapter pagination limit is an explicit error', function()
+    local s = source('')
+    function s:fetch(url)
+        self.calls[#self.calls + 1] = url
+        return '<ul class="pagination"><li><a rel="next" href="?page=' .. (#self.calls + 1) .. '">Next</a></li></ul>'
+    end
+    local rows, err = adapter.fetchChapterList(s, '/comic/test')
+    eq(rows, nil); assert(err:match('100 pages')); eq(#s.calls, 100)
+end)
+print('XOXO Comics: ' .. count .. ' tests passed')
