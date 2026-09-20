@@ -21,6 +21,8 @@ executed as bytecode.
 - `example.tkext.json` -- a worked example modeled on the real Madara theme
   (WordPress manga CMS covering ~200+ keiyoushi sources), showing every
   section of the format populated with realistic values.
+- `source-script-format.md` -- Lua source module contract (`source_script`) and
+  exported function signatures used by the KOReader runtime.
 
 ## Status
 

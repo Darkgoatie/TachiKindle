@@ -15,7 +15,7 @@ package.preload["libs/libkoreader-lfs"] = function() return {} end
 local adapter = {
     fetchMangaList = function(source, endpoint, page, query)
         assert(source.def.adapter == "readallcomics" and endpoint == "search" and page == 2 and query == "test")
-        return {{title = "Result"}}, nil, true
+        return {{title = "AdapterResult"}}, nil, true
     end,
     fetchMangaDetails = function(_, url) return {title = url} end,
     fetchChapterList = function(_, url) return {{url = url .. "/issue"}} end,
@@ -25,6 +25,15 @@ local adapter = {
     end,
 }
 package.preload["adapters/readallcomics"] = function() return adapter end
+
+local source_script = {
+    fetch_manga_list = function(source, endpoint, page, query)
+        assert(source.def.source_script == "sources/en/readallcomics")
+        assert(endpoint == "search" and page == 2 and query == "test")
+        return {{title = "ScriptResult"}}, nil, true
+    end,
+}
+package.preload["sources/en/readallcomics"] = function() return source_script end
 local Source = require("tachikindlesource")
 local path = os.tmpname()
 local file = assert(io.open(path, "w")); file:write("{}"); file:close()
@@ -33,18 +42,30 @@ local function test(name, fn)
     fn(); tests = tests + 1; print("PASS " .. name)
 end
 local function load()
-    definition = {adapter = "readallcomics", base_url = "https://example.test", endpoints = {page_list = {method = "GET", path = "{chapter_url}"}}}
+    definition = {
+        id = "en.readallcomics",
+        source_script = "sources/en/readallcomics",
+        adapter = "readallcomics",
+        base_url = "https://example.test",
+        endpoints = {page_list = {method = "GET", path = "{chapter_url}"}},
+    }
     return assert(Source:load(path))
 end
 
+test("reject non-canonical source_script path", function()
+    definition = {id = "en.readallcomics", source_script = "sources/en/other"}
+    local source, err = Source:load(path)
+    assert(source == nil and err:match("unsupported source_script"))
+end)
+
 test("reject unknown adapter instead of requiring downloaded code", function()
-    definition = {adapter = "../../arbitrary"}
+    definition = {id = "en.readallcomics", source_script = "sources/en/readallcomics", adapter = "../../arbitrary"}
     local source, err = Source:load(path)
     assert(source == nil and err:match("unsupported adapter"))
 end)
-test("dispatch list and retain pagination", function()
+test("dispatch list through source script and retain pagination", function()
     local list, err, more = load():fetchMangaList("search", 2, "test")
-    assert(list[1].title == "Result" and not err and more)
+    assert(list[1].title == "ScriptResult" and not err and more)
 end)
 test("dispatch details and chapters with complete URL", function()
     local source = load()

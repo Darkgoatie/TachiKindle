@@ -34,7 +34,7 @@ local cases = {
 }
 for _, case in ipairs(cases) do
     local source = assert(Source:load('extensions/sources/en/' .. case.name .. '.tkext.json'))
-    assert(source.def.id == 'en.' .. case.name and type(source.adapter) == 'table')
+    assert(source.def.id == 'en.' .. case.name and type(source.adapter) == 'table' and type(source.source_script) == 'table')
     local calls, stored = 0, nil
     function source:fetch(location, options)
         calls = calls + 1

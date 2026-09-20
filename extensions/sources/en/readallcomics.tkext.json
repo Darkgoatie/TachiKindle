@@ -4,6 +4,7 @@
   "lang": "en",
   "base_url": "https://readallcomics.com",
   "version_code": 1,
+  "source_script": "sources/en/readallcomics",
   "content_warning": "SAFE",
   "adapter": "readallcomics",
   "client": {

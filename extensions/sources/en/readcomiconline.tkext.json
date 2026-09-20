@@ -4,6 +4,7 @@
   "lang": "en",
   "base_url": "https://readcomiconline.li",
   "version_code": 1,
+  "source_script": "sources/en/readcomiconline",
   "content_warning": "SAFE",
   "adapter": "readcomiconline",
   "client": {

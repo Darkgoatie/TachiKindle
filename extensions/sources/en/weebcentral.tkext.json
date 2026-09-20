@@ -5,6 +5,7 @@
   "lang": "en",
   "base_url": "https://weebcentral.com",
   "version_code": 1,
+  "source_script": "sources/en/weebcentral",
   "content_warning": "MIXED",
   "theme": "none",
 

@@ -5,6 +5,7 @@
   "lang": "en",
   "base_url": "https://example.com",
   "version_code": 1,
+  "source_script": "sources/en/example_madara",
   "content_warning": "SAFE",
   "theme": "madara",
 

@@ -4,6 +4,7 @@
   "lang": "en",
   "base_url": "https://batcave.biz",
   "version_code": 1,
+  "source_script": "sources/en/batcave",
   "content_warning": "SAFE",
   "adapter": "batcave",
   "client": {

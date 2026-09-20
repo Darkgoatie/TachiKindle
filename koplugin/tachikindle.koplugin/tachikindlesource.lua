@@ -30,6 +30,12 @@ local lfs = require("libs/libkoreader-lfs")
 local TachiKindleSource = {}
 TachiKindleSource.__index = TachiKindleSource
 
+local function canonicalSourceScriptForId(source_id)
+    local lang, name = tostring(source_id or ""):match("^([a-z][a-z][a-z]?)%.([a-z0-9_]+)$")
+    if not lang or not name then return nil end
+    return string.format("sources/%s/%s", lang, name)
+end
+
 -- Load a .tkext.json file from disk into a runnable source object.
 function TachiKindleSource:load(path)
     local f = io.open(path, "r")
@@ -42,7 +48,24 @@ function TachiKindleSource:load(path)
         return nil, "invalid JSON in " .. path
     end
 
-    -- Only bundled adapters are executable; repository JSON cannot name arbitrary modules.
+    local source_script
+    local canonical_source_script = canonicalSourceScriptForId(def.id)
+    if def.source_script then
+        if not canonical_source_script or def.source_script ~= canonical_source_script then
+            return nil, "unsupported source_script: " .. tostring(def.source_script)
+        end
+        local loaded, result = pcall(require, def.source_script)
+        if not loaded then return nil, "source script unavailable: " .. tostring(result) end
+        if type(result) ~= "table" then return nil, "source script must return a table" end
+        source_script = result
+    elseif canonical_source_script then
+        local loaded, result = pcall(require, canonical_source_script)
+        if loaded and type(result) == "table" then
+            source_script = result
+        end
+    end
+
+    -- Legacy adapter support: source-specific scripts should replace these over time.
     local adapters = {
         readallcomics = "adapters/readallcomics",
         xoxocomics = "adapters/xoxocomics",
@@ -57,7 +80,7 @@ function TachiKindleSource:load(path)
         if not loaded then return nil, "adapter unavailable: " .. tostring(result) end
         adapter = result
     end
-    return setmetatable({ def = def, adapter = adapter }, self)
+    return setmetatable({ def = def, adapter = adapter, source_script = source_script }, self)
 end
 
 -- Fill {placeholders} in an endpoint path template. query is
@@ -267,6 +290,14 @@ function TachiKindleSource:loadCachedPage(chapter_url, index, page_url)
     return body
 end
 
+local function callSourceScript(source, snake_case_name, camel_name, ...)
+    local script = source.source_script
+    if type(script) ~= "table" then return nil, "no_script" end
+    local fn = script[snake_case_name] or script[camel_name]
+    if type(fn) ~= "function" then return nil, "no_handler" end
+    return fn(source, ...)
+end
+
 -- Popular/latest/search manga list -> { {title, url, cover}, ... }.
 -- offset is derived from page (1-indexed) using a fixed page size,
 -- since WeebCentral's real API takes offset=(page-1)*pageSize, not
@@ -274,10 +305,8 @@ end
 -- skipped/missed real results (confirmed: page=1 produced offset=1,
 -- which returned wrong/empty results against the live site).
 local SEARCH_PAGE_SIZE = 32
-function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
-    if self.adapter and self.adapter.fetchMangaList then
-        return self.adapter.fetchMangaList(self, endpoint_name, page or 1, query or "")
-    end
+
+function TachiKindleSource:fetchMangaListWithSelectors(endpoint_name, page, query)
     page = page or 1
     local url, err = self:resolveUrl(endpoint_name, {
         page = page,
@@ -303,11 +332,19 @@ function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
     return list, nil, has_next
 end
 
--- Manga details page -> { title, author, description, status, genres, cover }
-function TachiKindleSource:fetchMangaDetails(manga_url)
-    if self.adapter and self.adapter.fetchMangaDetails then
-        return self.adapter.fetchMangaDetails(self, manga_url)
+function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
+    local result, script_state, has_next = callSourceScript(self, "fetch_manga_list", "fetchMangaList", endpoint_name, page or 1, query or "")
+    if script_state ~= "no_script" and script_state ~= "no_handler" then
+        return result, script_state, has_next
     end
+    if self.adapter and self.adapter.fetchMangaList then
+        return self.adapter.fetchMangaList(self, endpoint_name, page or 1, query or "")
+    end
+    return self:fetchMangaListWithSelectors(endpoint_name, page, query)
+end
+
+-- Manga details page -> { title, author, description, status, genres, cover }
+function TachiKindleSource:fetchMangaDetailsWithSelectors(manga_url)
     local url, err = self:resolveUrl("manga_details", { manga_url = manga_url })
     if not url then return nil, err end
     local body, ferr = self:fetch(url)
@@ -329,6 +366,17 @@ function TachiKindleSource:fetchMangaDetails(manga_url)
     }
 end
 
+function TachiKindleSource:fetchMangaDetails(manga_url)
+    local result, script_state = callSourceScript(self, "fetch_manga_details", "fetchMangaDetails", manga_url)
+    if script_state ~= "no_script" and script_state ~= "no_handler" then
+        return result, script_state
+    end
+    if self.adapter and self.adapter.fetchMangaDetails then
+        return self.adapter.fetchMangaDetails(self, manga_url)
+    end
+    return self:fetchMangaDetailsWithSelectors(manga_url)
+end
+
 -- Chapter list for a manga -> { {title, url, date}, ... }, newest first
 -- as the site returns them (no re-sorting -- most theme sites already
 -- list newest-first, and re-sorting risks fighting a source that isn't).
@@ -336,11 +384,7 @@ end
 -- Some sources drift between slugged and slugless chapter-list routes.
 -- Try the scraped manga_url first, then a trimmed /segment1/segment2
 -- fallback if the first response yields no chapter items.
-function TachiKindleSource:fetchChapterList(manga_url)
-    if self.adapter and self.adapter.fetchChapterList then
-        return self.adapter.fetchChapterList(self, manga_url)
-    end
-
+function TachiKindleSource:fetchChapterListWithSelectors(manga_url)
     local candidates = { manga_url }
     local trimmed = manga_url:match("^(https?://[^/]+/[^/]+/[^/]+)")
     if trimmed and trimmed ~= manga_url then
@@ -394,31 +438,57 @@ function TachiKindleSource:fetchChapterList(manga_url)
     return nil, last_err
 end
 
+function TachiKindleSource:fetchChapterList(manga_url)
+    local result, script_state = callSourceScript(self, "fetch_chapter_list", "fetchChapterList", manga_url)
+    if script_state ~= "no_script" and script_state ~= "no_handler" then
+        return result, script_state
+    end
+    if self.adapter and self.adapter.fetchChapterList then
+        return self.adapter.fetchChapterList(self, manga_url)
+    end
+    return self:fetchChapterListWithSelectors(manga_url)
+end
+
+function TachiKindleSource:parsePageListWithSelectors(body)
+    local root = htmlparser.parse(body, 5000)
+    local sel = self.def.selectors
+    local pages = {}
+    for _, img in ipairs(root:select(sel.page_image.sel)) do
+        local v = img.attributes[sel.page_image.attr]
+        if (not v or v == "") and sel.page_image.fallback_attr then
+            v = img.attributes[sel.page_image.fallback_attr]
+        end
+        v = normalizeUrl(self.def.base_url, v)
+        if v then table.insert(pages, v) end
+    end
+    return pages
+end
+
+function TachiKindleSource:fetchPageListWithSelectors(chapter_url)
+    local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
+    if not url then return nil, err end
+    local body, ferr = self:fetch(url)
+    if not body then return nil, ferr end
+    return self:parsePageListWithSelectors(body)
+end
+
 -- Page image URLs for a chapter -> { url, url, ... }.
 -- If online fetch fails, falls back to previously cached page-list metadata.
 function TachiKindleSource:fetchPageList(chapter_url)
-    local pages, ferr
-    if self.adapter and self.adapter.fetchPages then
-        pages, ferr = self.adapter.fetchPages(self, chapter_url)
-    else
-        local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
-        if not url then return nil, err end
-        local body
-        body, ferr = self:fetch(url)
-        if body then
-            if self.adapter and self.adapter.parsePages then
-                pages, ferr = self.adapter.parsePages(self, body, chapter_url)
-            else
-                local root = htmlparser.parse(body, 5000)
-                local sel = self.def.selectors
-                pages = {}
-                for _, img in ipairs(root:select(sel.page_image.sel)) do
-                    local v = img.attributes[sel.page_image.attr]
-                    if (not v or v == "") and sel.page_image.fallback_attr then
-                        v = img.attributes[sel.page_image.fallback_attr]
-                    end
-                    v = normalizeUrl(self.def.base_url, v)
-                    if v then table.insert(pages, v) end
+    local pages, ferr = callSourceScript(self, "fetch_page_list", "fetchPageList", chapter_url)
+    if ferr == "no_script" or ferr == "no_handler" then
+        if self.adapter and self.adapter.fetchPages then
+            pages, ferr = self.adapter.fetchPages(self, chapter_url)
+        else
+            local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
+            if not url then return nil, err end
+            local body
+            body, ferr = self:fetch(url)
+            if body then
+                if self.adapter and self.adapter.parsePages then
+                    pages, ferr = self.adapter.parsePages(self, body, chapter_url)
+                else
+                    pages = self:parsePageListWithSelectors(body)
                 end
             end
         end

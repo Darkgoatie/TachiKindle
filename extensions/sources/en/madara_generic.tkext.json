@@ -5,6 +5,7 @@
   "lang": "en",
   "base_url": "https://REPLACE_WITH_REAL_SITE",
   "version_code": 1,
+  "source_script": "sources/en/madara_generic",
   "content_warning": "SAFE",
   "theme": "madara",
 

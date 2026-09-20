@@ -129,7 +129,7 @@ static int looks_like_valid_extension(const char *json, size_t len) {
     if (!root || !cJSON_IsObject(root)) { cJSON_Delete(root); return 0; }
     const char *required[] = {
         "id", "name", "lang", "base_url", "version_code",
-        "endpoints", "selectors"
+        "source_script", "endpoints", "selectors"
     };
     int ok = 1;
     for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {

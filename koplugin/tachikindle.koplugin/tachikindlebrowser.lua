@@ -224,7 +224,7 @@ function TachiKindleBrowser:downloadExtension(repo_url, ext_entry)
     -- top-level keys -- not full JSON Schema validation, just enough
     -- to reject garbage before writing it to disk.
     local ok, parsed = pcall(JSON.decode, body)
-    local required = { "id", "name", "lang", "base_url", "version_code", "endpoints", "selectors" }
+    local required = { "id", "name", "lang", "base_url", "version_code", "source_script", "endpoints", "selectors" }
     if not ok or type(parsed) ~= "table" then
         UIManager:show(InfoMessage:new{ text = _("Downloaded file is not valid JSON.") })
         return
