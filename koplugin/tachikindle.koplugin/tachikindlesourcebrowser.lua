@@ -34,6 +34,7 @@ local SCREEN_MANGA_LIST = "manga_list"
 local SCREEN_CHAPTER_LIST = "chapter_list"
 local SCREEN_FAVORITES = "favorites"
 local SCREEN_OFFLINE = "offline"
+local SCREEN_DOWNLOAD_QUEUE = "download_queue"
 local SCREEN_CONTINUE = "continue"
 local SCREEN_ANALYTICS = "analytics"
 
@@ -43,6 +44,8 @@ function TachiKindleSourceBrowser:init()
         self.item_table = self:genFavoritesItemTable()
     elseif self.screen == SCREEN_OFFLINE then
         self.item_table = self:genOfflineItemTable()
+    elseif self.screen == SCREEN_DOWNLOAD_QUEUE then
+        self.item_table = self:genDownloadQueueItemTable()
     elseif self.screen == SCREEN_CONTINUE then
         self.item_table = self:genContinueItemTable()
     elseif self.screen == SCREEN_ANALYTICS then
@@ -120,8 +123,8 @@ function TachiKindleSourceBrowser:genSourceItemTable()
             callback = function() self:showOfflineLibrary() end,
         },
         {
-            text = _("Process download queue"),
-            callback = function() self:processDownloadQueue() end,
+            text = _("Download Queue"),
+            callback = function() self:showDownloadQueue() end,
         },
     }
     for _, source in pairs(self:loadAllSources()) do
@@ -238,24 +241,12 @@ end
 function TachiKindleSourceBrowser:genOfflineItemTable()
     local items = {
         {
-            text = _("Process queue now"),
-            callback = function() self:processDownloadQueue() end,
+            text = _("Download Queue"),
+            callback = function() self:showDownloadQueue() end,
         },
         {
             text = _("Clean failed caches"),
             callback = function() self:cleanFailedCaches() end,
-        },
-        {
-            text = _("Pause queue"),
-            callback = function() self:setQueuePaused(true) end,
-        },
-        {
-            text = _("Resume queue"),
-            callback = function() self:setQueuePaused(false) end,
-        },
-        {
-            text = _("Clear queue"),
-            callback = function() self:clearQueue() end,
         },
         {
             text = _("Export offline manifest"),
@@ -266,6 +257,7 @@ function TachiKindleSourceBrowser:genOfflineItemTable()
             callback = function() self:importOfflineManifest() end,
         },
     }
+    local static_rows = #items
     local sources = self:loadAllSources()
     local total_bytes = 0
     for _, source in pairs(sources) do
@@ -280,10 +272,10 @@ function TachiKindleSourceBrowser:genOfflineItemTable()
             })
         end
     end
-    if #items == 2 then
+    if #items == static_rows then
         table.insert(items, { text = _("No offline chapters yet.") })
     else
-        table.insert(items, 3, { text = _("Total cache: ") .. fmtMB(total_bytes) })
+        table.insert(items, static_rows + 1, { text = _("Total cache: ") .. fmtMB(total_bytes) })
     end
     return items
 end
@@ -291,6 +283,57 @@ end
 function TachiKindleSourceBrowser:showOfflineLibrary()
     self.screen = SCREEN_OFFLINE
     self:switchItemTable(_("Offline Library"), self:genOfflineItemTable())
+    UIManager:setDirty(self, "full")
+end
+
+function TachiKindleSourceBrowser:genDownloadQueueItemTable()
+    local items = {
+        {
+            text = _("← Back to Sources"),
+            callback = function()
+                self.screen = SCREEN_SOURCE_LIST
+                self:switchItemTable(_("Sources"), self:genSourceItemTable())
+                UIManager:setDirty(self, "full")
+            end,
+        },
+        {
+            text = _("Process all queued downloads now"),
+            callback = function() self:processDownloadQueue() end,
+        },
+        {
+            text = _("Clear download queue"),
+            callback = function() self:clearQueue() end,
+        },
+    }
+
+    local queue = {}
+    for _, source in pairs(self:loadAllSources()) do
+        for _, job in ipairs(source:loadQueue()) do
+            if job.source_id == source.def.id then
+                table.insert(queue, job)
+            end
+        end
+    end
+    table.sort(queue, function(a, b)
+        return (a.created_at or 0) < (b.created_at or 0)
+    end)
+
+    if #queue == 0 then
+        table.insert(items, { text = _("Download queue is empty.") })
+        return items
+    end
+
+    for i, job in ipairs(queue) do
+        table.insert(items, {
+            text = string.format("%d. [%s] %s / %s", i, job.source_name or job.source_id or "source", job.manga_title or "Manga", job.chapter_title or job.chapter_url or "chapter"),
+        })
+    end
+    return items
+end
+
+function TachiKindleSourceBrowser:showDownloadQueue()
+    self.screen = SCREEN_DOWNLOAD_QUEUE
+    self:switchItemTable(_("Download Queue"), self:genDownloadQueueItemTable())
     UIManager:setDirty(self, "full")
 end
 
@@ -406,80 +449,99 @@ function TachiKindleSourceBrowser:downloadFilteredRange(source, chapters, count,
     self:downloadChapterRange(source, filtered, n, force)
 end
 
-function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count, priority)
+function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count)
     count = math.min(tonumber(count) or 0, #chapters)
-    local qn = 0
     for i = 1, count do
         local ch = chapters[i]
-        qn = source:enqueueChapter({
+        source:enqueueChapter({
             chapter_url = ch.url,
             chapter_title = ch.title,
             manga_title = self.current_manga and self.current_manga.title or nil,
-            priority = priority,
         })
     end
-    local r = source:processQueue(1)
+    local r = self:processDownloadQueue(nil, true)
     UIManager:show(InfoMessage:new{
-        text = string.format("Queued %d chapters. Downloaded now: %d. Remaining: %d", count, r.done or 0, r.remaining or qn),
+        text = string.format("Added %d to download queue. Downloaded now: %d. Waiting: %d", count, r.done or 0, r.remaining or 0),
         timeout = 2,
     })
 end
 
-function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, priority, want_read)
+function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, want_read)
     local filtered = filterChaptersByReadState(source, chapters, want_read)
     if #filtered == 0 then
         UIManager:show(InfoMessage:new{ text = want_read and _("No read chapters to queue") or _("No unread chapters to queue"), timeout = 1 })
         return
     end
     local n = math.min(tonumber(count) or #filtered, #filtered)
-    self:queueChapterRange(source, filtered, n, priority)
+    self:queueChapterRange(source, filtered, n)
 end
 
-function TachiKindleSourceBrowser:processDownloadQueue()
-    local MAX_QUEUE_BATCH = 1
+function TachiKindleSourceBrowser:processDownloadQueue(max_total, silent)
     local done, failed = 0, 0
-    local budget = MAX_QUEUE_BATCH
     local sources = self:loadAllSources()
 
-    for _, source in pairs(sources) do
-        if budget > 0 then
-            local r = source:processQueue(budget)
-            done = done + (r.done or 0)
-            failed = failed + (r.failed or 0)
-            budget = math.max(0, budget - (r.done or 0))
-        end
-    end
-
-    local remaining = 0
-    for _, source in pairs(sources) do
-        for _, job in ipairs(source:loadQueue()) do
-            if job.source_id == source.def.id then
-                remaining = remaining + 1
+    local function count_pending()
+        local pending = 0
+        for _, s in pairs(sources) do
+            for _, job in ipairs(s:loadQueue()) do
+                if job.source_id == s.def.id then
+                    pending = pending + 1
+                end
             end
         end
+        return pending
     end
 
-    UIManager:show(InfoMessage:new{
-        text = string.format("Queue (max %d/run): done=%d failed=%d remaining=%d", MAX_QUEUE_BATCH, done, failed, remaining),
-        timeout = 2,
-    })
+    local budget = tonumber(max_total) or count_pending()
+    if budget <= 0 then
+        if not silent then
+            UIManager:show(InfoMessage:new{ text = _("Download queue is empty."), timeout = 1 })
+        end
+        return { done = 0, failed = 0, remaining = 0 }
+    end
+
+    while budget > 0 do
+        local progressed = false
+        for _, source in pairs(sources) do
+            if budget <= 0 then break end
+            local r = source:processQueue(1)
+            done = done + (r.done or 0)
+            failed = failed + (r.failed or 0)
+            if (r.done or 0) > 0 then
+                budget = budget - 1
+                progressed = true
+            end
+        end
+        if not progressed then break end
+    end
+
+    local remaining = count_pending()
+    if not silent then
+        UIManager:show(InfoMessage:new{
+            text = string.format("Downloaded: %d, failed: %d, waiting: %d", done, failed, remaining),
+            timeout = 2,
+        })
+    end
+
     if self.screen == SCREEN_OFFLINE then
         self:showOfflineLibrary()
+    elseif self.screen == SCREEN_DOWNLOAD_QUEUE then
+        self:showDownloadQueue()
     end
-end
 
-function TachiKindleSourceBrowser:setQueuePaused(paused)
-    for _, source in pairs(self:loadAllSources()) do
-        source:setAllQueuePaused(paused)
-    end
-    UIManager:show(InfoMessage:new{ text = paused and _("Queue paused") or _("Queue resumed"), timeout = 1 })
+    return { done = done, failed = failed, remaining = remaining }
 end
 
 function TachiKindleSourceBrowser:clearQueue()
     for _, source in pairs(self:loadAllSources()) do
         source:clearQueue()
     end
-    UIManager:show(InfoMessage:new{ text = _("Queue cleared"), timeout = 1 })
+    UIManager:show(InfoMessage:new{ text = _("Download queue cleared"), timeout = 1 })
+    if self.screen == SCREEN_DOWNLOAD_QUEUE then
+        self:showDownloadQueue()
+    elseif self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    end
 end
 
 function TachiKindleSourceBrowser:onMenuSelect(item)
@@ -561,9 +623,7 @@ function TachiKindleSourceBrowser:showChapterActions(item)
             {{ text = _("Redownload"), callback = function() UIManager:close(dialog); self:downloadChapterForOffline(source, chapter, true) end, align = "left" }},
             {{ text = _("Verify cache"), callback = function() UIManager:close(dialog); self:verifyOfflineChapter(source, chapter) end, align = "left" }},
             {{ text = _("Delete cache"), callback = function() UIManager:close(dialog); self:deleteOfflineChapter(source, chapter) end, align = "left" }},
-            {{ text = _("Queue high"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 1) end, align = "left" }},
-            {{ text = _("Queue normal"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 5) end, align = "left" }},
-            {{ text = _("Queue low"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 9) end, align = "left" }},
+            {{ text = _("Add to download queue"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter) end, align = "left" }},
             {{ text = _("Mark as read"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, true) end, align = "left" }},
             {{ text = _("Mark as unread"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, false) end, align = "left" }},
             {{ text = _("Mark read until here"), callback = function() UIManager:close(dialog); self:markChapterRangeRead(source, item, true) end, align = "left" }},
@@ -660,16 +720,15 @@ function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
     end
 end
 
-function TachiKindleSourceBrowser:queueChapter(source, chapter, priority)
+function TachiKindleSourceBrowser:queueChapter(source, chapter)
     source:enqueueChapter({
         chapter_url = chapter.url,
         chapter_title = chapter.title,
         manga_title = self.current_manga and self.current_manga.title or nil,
-        priority = priority,
     })
-    local r = source:processQueue(1)
+    local r = self:processDownloadQueue(nil, true)
     UIManager:show(InfoMessage:new{
-        text = string.format("Queued. Downloaded now: %d. Remaining: %d", r.done or 0, r.remaining or 0),
+        text = string.format("Added to download queue. Downloaded now: %d. Waiting: %d", r.done or 0, r.remaining or 0),
         timeout = 1,
     })
 end
@@ -895,24 +954,24 @@ function TachiKindleSourceBrowser:openManga(source, manga)
             callback = function() self:downloadFilteredRange(source, chapters, 10, false, true) end,
         },
         {
-            text = _("Queue next 10 chapters"),
-            callback = function() self:queueChapterRange(source, chapters, 10, 5) end,
+            text = _("Add next 10 to download queue"),
+            callback = function() self:queueChapterRange(source, chapters, 10) end,
         },
         {
-            text = _("Queue next 10 unread"),
-            callback = function() self:queueFilteredRange(source, chapters, 10, 5, false) end,
+            text = _("Add next 10 unread to download queue"),
+            callback = function() self:queueFilteredRange(source, chapters, 10, false) end,
         },
         {
-            text = _("Queue next 10 read"),
-            callback = function() self:queueFilteredRange(source, chapters, 10, 5, true) end,
+            text = _("Add next 10 read to download queue"),
+            callback = function() self:queueFilteredRange(source, chapters, 10, true) end,
         },
         {
-            text = _("Queue all unread"),
-            callback = function() self:queueFilteredRange(source, chapters, #chapters, 5, false) end,
+            text = _("Add all unread to download queue"),
+            callback = function() self:queueFilteredRange(source, chapters, #chapters, false) end,
         },
         {
-            text = _("Queue all chapters"),
-            callback = function() self:queueChapterRange(source, chapters, #chapters, 5) end,
+            text = _("Add all to download queue"),
+            callback = function() self:queueChapterRange(source, chapters, #chapters) end,
         },
         {
             text = _("Continue latest in-progress"),

@@ -641,14 +641,10 @@ function TachiKindleSource:enqueueChapter(job)
     job = job or {}
     job.source_id = self.def.id
     job.source_name = self.def.name
-    job.priority = tonumber(job.priority) or 5
     job.created_at = os.time()
     table.insert(q, job)
     table.sort(q, function(a, b)
-        if (a.priority or 5) == (b.priority or 5) then
-            return (a.created_at or 0) < (b.created_at or 0)
-        end
-        return (a.priority or 5) < (b.priority or 5)
+        return (a.created_at or 0) < (b.created_at or 0)
     end)
     self:saveQueue(q)
     return #q
@@ -657,29 +653,6 @@ end
 function TachiKindleSource:removeQueueJob(index)
     local q = self:loadQueue()
     table.remove(q, index)
-    self:saveQueue(q)
-    return q
-end
-
-function TachiKindleSource:pauseQueueJob(index)
-    local q = self:loadQueue()
-    if q[index] then q[index].paused = true end
-    self:saveQueue(q)
-    return q
-end
-
-function TachiKindleSource:resumeQueueJob(index)
-    local q = self:loadQueue()
-    if q[index] then q[index].paused = false end
-    self:saveQueue(q)
-    return q
-end
-
-function TachiKindleSource:setAllQueuePaused(paused)
-    local q = self:loadQueue()
-    for _, job in ipairs(q) do
-        if job.source_id == self.def.id then job.paused = paused and true or false end
-    end
     self:saveQueue(q)
     return q
 end
@@ -701,7 +674,7 @@ function TachiKindleSource:processQueue(max_jobs)
     local i = 1
     while i <= #q and done < max_jobs do
         local job = q[i]
-        if job.source_id == self.def.id and not job.paused and job.chapter_url then
+        if job.source_id == self.def.id and job.chapter_url then
             local result = self:prefetchChapter(job.chapter_url, {
                 force = job.force,
                 manga_title = job.manga_title,
