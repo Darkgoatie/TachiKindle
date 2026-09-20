@@ -97,7 +97,6 @@ end
 -- real 247KB page with all 133 chapters.
 function TachiKindleSource:fetch(url, options)
     options = options or {}
-    local sink = {}
     local headers = {
         ["Accept-Encoding"] = "identity",
         ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -109,19 +108,39 @@ function TachiKindleSource:fetch(url, options)
     for k, v in pairs(options.headers or {}) do headers[k] = v end
     if options.body then headers["Content-Length"] = tostring(#options.body) end
 
-    socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-    local ok, code = pcall(function()
-        return socket.skip(1, http.request{
-            url = url, method = options.method or "GET", headers = headers,
-            source = options.body and ltn12.source.string(options.body) or nil,
-            sink = ltn12.sink.table(sink),
-        })
-    end)
-    socketutil:reset_timeout()
+    local attempts = 3
+    local last_err
+    for i = 1, attempts do
+        local sink = {}
+        socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
+        local ok, code = pcall(function()
+            return socket.skip(1, http.request{
+                url = url, method = options.method or "GET", headers = headers,
+                source = options.body and ltn12.source.string(options.body) or nil,
+                sink = ltn12.sink.table(sink),
+            })
+        end)
+        socketutil:reset_timeout()
 
-    if not ok then return nil, tostring(code) end
-    if code ~= 200 then return nil, "HTTP " .. tostring(code) end
-    return table.concat(sink)
+        if ok and code == 200 then
+            return table.concat(sink)
+        end
+
+        local msg = ok and tostring(code) or tostring(code)
+        last_err = msg
+        local lower = msg:lower()
+        local transient = lower:match("cannot assign requested address")
+            or lower:match("timeout")
+            or lower:match("closed")
+            or lower:match("refused")
+        if i < attempts and transient then
+            socket.sleep(0.25 * i)
+        else
+            break
+        end
+    end
+
+    return nil, "HTTP " .. tostring(last_err)
 end
 
 -- Run a selector (string or {sel,attr,fallback_attr}) against a
