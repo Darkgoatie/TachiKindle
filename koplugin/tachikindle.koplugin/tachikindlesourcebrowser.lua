@@ -80,6 +80,31 @@ function TachiKindleSourceBrowser:loadAllSources()
     return by_id
 end
 
+local function ordinal(n)
+    n = tonumber(n) or 0
+    local mod100 = n % 100
+    if mod100 >= 11 and mod100 <= 13 then return tostring(n) .. "th" end
+    local mod10 = n % 10
+    if mod10 == 1 then return tostring(n) .. "st" end
+    if mod10 == 2 then return tostring(n) .. "nd" end
+    if mod10 == 3 then return tostring(n) .. "rd" end
+    return tostring(n) .. "th"
+end
+
+local function formatReadableDate(raw)
+    if not raw or raw == "" then return nil end
+    if not tostring(raw):find("T") then return tostring(raw) end
+
+    local y, m, d = tostring(raw):match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T")
+    if not (y and m and d) then return tostring(raw) end
+
+    local month_names = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+    local month = month_names[tonumber(m)]
+    if not month then return tostring(raw) end
+
+    return string.format("%s %s %s", month, ordinal(tonumber(d)), y)
+end
+
 function TachiKindleSourceBrowser:genSourceItemTable()
     local item_table = {
         {
@@ -875,8 +900,9 @@ function TachiKindleSourceBrowser:openManga(source, manga)
                 prefix = string.format("• %d/%d ", tonumber(progress.last_page) or 0, tonumber(progress.total_pages) or 0)
             end
         end
+        local readable_date = formatReadableDate(c.date)
         table.insert(item_table, {
-            text = prefix .. (c.date and (c.title .. "  (" .. c.date .. ")") or c.title),
+            text = prefix .. (readable_date and (c.title .. "  (" .. readable_date .. ")") or c.title),
             source = source,
             chapter = c,
             chapter_index = i,
