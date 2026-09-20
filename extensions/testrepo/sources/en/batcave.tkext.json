@@ -1,0 +1,54 @@
+{
+  "id": "en.batcave",
+  "name": "BatCave",
+  "lang": "en",
+  "base_url": "https://batcave.biz",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "adapter": "batcave",
+  "client": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "extra_headers": {"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1"}
+  },
+  "endpoints": {
+    "popular": {"method": "POST", "path": "/comix/", "form_body": {"dlenewssortby": "rating", "dledirection": "desc", "set_new_sort": "dle_sort_cat_1", "set_direction_sort": "dle_direction_cat_1"}},
+    "latest": {"method": "GET", "path": "/"},
+    "search": {"method": "GET", "path": "/search/{query}/"},
+    "manga_details": {"method": "GET", "path": "{manga_url}"},
+    "chapter_list": {"method": "GET", "path": "{manga_url}"},
+    "page_list": {"method": "POST", "path": "/engine/ajax/controller.php?mod=api&action=reader/getChapterData"}
+  },
+  "selectors": {
+    "manga_list_item": "#dle-content > .readed",
+    "manga_title": ".readed__title > a",
+    "manga_url": {"sel": ".readed__title > a", "attr": "href"},
+    "manga_cover": {"sel": ".readed__img img", "attr": "data-src"},
+    "details_title": "header.page__header h1",
+    "chapter_item": null,
+    "chapter_title": null,
+    "chapter_url": null,
+    "page_image": null
+  },
+  "_selectors_note": "Mandatory adapter owns pagination paths, latest selectors, window.__DATA__ chapters and JSON reader POST. Null selectors explicitly indicate non-HTML data; generic selector fallback cannot operate this source.",
+  "pagination": {"strategy": "has_next_selector"},
+  "date_format": "%d.%m.%Y",
+  "filters": [],
+  "upstream": {
+    "project": "https://github.com/keiyoushi/extensions-source",
+    "path": "src/en/batcave/src/eu/kanade/tachiyomi/extension/en/batcave/BatCave.kt",
+    "version_code": 12,
+    "license": "Apache-2.0",
+    "attribution": "Keiyoushi contributors; adapted BatCave.kt and Dto.kt to Lua for KOReader."
+  },
+  "limitations": [
+    "DLE Guard WebView resolver and Cloudflare challenge solving are not ported.",
+    "Dynamic publisher/genre/year/sort filters and related-comic lists are not exposed. Empty text search uses popular browsing.",
+    "Requires runtime fetchPages adapter hook for the JSON POST body; no ordinary HTML reader fallback.",
+    "Reader API and comic images were deliberately not fetched during verification; synthetic fixtures only."
+  ],
+  "verification": {
+    "fixture_tests": "tests/test_batcave_adapter.lua",
+    "live_metadata": "2026-09-20: POST /comix/ returned HTTP 403, 5919 bytes, title marker Just a moment. No protected content or guard bypass attempted.",
+    "status": "fixture-tested; live-blocked"
+  }
+}
