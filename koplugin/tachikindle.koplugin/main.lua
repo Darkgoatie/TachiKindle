@@ -74,13 +74,15 @@ function TachiKindle:addToMainMenu(menu_items)
     menu_items.tachikindle = {
         text = _("TachiKindle"),
         sorting_hint = "more_tools",
+        callback = function()
+            self:showSourceList()
+        end,
+    }
+
+    menu_items.tachikindle_tools = {
+        text = _("TachiKindle Tools"),
+        sorting_hint = "more_tools",
         sub_item_table = {
-            {
-                text = _("Browse Sources"),
-                callback = function()
-                    self:showSourceList()
-                end,
-            },
             {
                 text = _("Continue Reading"),
                 callback = function()
