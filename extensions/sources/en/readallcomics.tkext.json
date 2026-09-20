@@ -1,0 +1,51 @@
+{
+  "id": "en.readallcomics",
+  "name": "ReadAllComics",
+  "lang": "en",
+  "base_url": "https://readallcomics.com",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "adapter": "readallcomics",
+  "client": {
+    "user_agent": "Mozilla/5.0",
+    "extra_headers": {"Referer": "https://readallcomics.com/"}
+  },
+  "endpoints": {
+    "popular": {"method": "GET", "path": "/?paged={page}"},
+    "search": {"method": "GET", "path": "/?story={query}&s=&type=comic&paged={page}"},
+    "manga_details": {"method": "GET", "path": "{manga_url}"},
+    "chapter_list": {"method": "GET", "path": "{manga_url}"},
+    "page_list": {"method": "GET", "path": "{chapter_url}"}
+  },
+  "selectors": {
+    "manga_list_item": "ul.list-story.categories li",
+    "manga_title": "a.cat-title",
+    "manga_url": {"sel": "a.cat-title", "attr": "href"},
+    "manga_cover": {"sel": "img.book-cover", "attr": "src"},
+    "details_title": ".description-archive h1",
+    "details_cover": {"sel": ".description-archive p img", "attr": "src"},
+    "details_genres": ".description-archive .b > p strong",
+    "details_description": "#hidden-description",
+    "chapter_item": ".list-story a",
+    "chapter_title": "self",
+    "chapter_url": {"sel": "self", "attr": "href"},
+    "page_image": {"sel": "body img", "attr": "src"}
+  },
+  "pagination": {"strategy": "has_next_selector"},
+  "date_format": "%Y-%m-%d",
+  "_upstream": {
+    "repository": "https://github.com/keiyoushi/extensions-source",
+    "source": "src/en/readallcomicscom/src/eu/kanade/tachiyomi/extension/en/readallcomicscom/ReadAllComics.kt",
+    "version_code": 8,
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/keiyoushi/extensions-source/blob/main/LICENSE",
+    "attribution": "Keiyoushi extensions-source contributors; modified as a Lua adapter for TachiKindle."
+  },
+  "_limitations": [
+    "Requires the bundled readallcomics adapter: selectors alone do not preserve sibling pagination, details strong first/last selection, or logo-image exclusion.",
+    "Latest updates are unsupported upstream and deliberately omitted.",
+    "Chapter dates are display strings inferred as January 1 from the final parenthesized year, rather than epoch timestamps.",
+    "Page selection intentionally mirrors upstream: all body images except descendants of div#logo; upstream can include other site images.",
+    "No challenge bypass: live metadata probe returned HTTP 522; live parsing and reader image retrieval remain unverified."
+  ]
+}
