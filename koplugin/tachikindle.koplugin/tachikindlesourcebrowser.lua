@@ -625,6 +625,16 @@ end
 function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
     local chapters = item.chapter_list or self.current_chapters
     local idx = tonumber(item.chapter_index)
+
+    if chapters and (not idx or idx < 1 or idx > #chapters) and item.chapter and item.chapter.url then
+        for i, ch in ipairs(chapters) do
+            if ch.url == item.chapter.url then
+                idx = i
+                break
+            end
+        end
+    end
+
     if not chapters or not idx or idx < 1 or idx > #chapters then
         self:markChapterRead(source, item.chapter, is_read)
         return
