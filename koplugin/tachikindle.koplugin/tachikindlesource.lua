@@ -313,44 +313,65 @@ end
 -- as the site returns them (no re-sorting -- most theme sites already
 -- list newest-first, and re-sorting risks fighting a source that isn't).
 --
--- WeebCentral's real chapter-list URL is /series/{seriesId}/full-chapter-list
--- WITHOUT the trailing slug -- the manga_url scraped from search/popular
--- includes the slug (.../series/{id}/Kagurabachi), and appending
--- /full-chapter-list to THAT 404s (confirmed live: identical bytes to
--- a real fetched 404 page, "manga you are looking for might have been
--- moved or deleted"). Strip back to base_url + first two path segments
--- before resolving this one endpoint.
+-- Some sources drift between slugged and slugless chapter-list routes.
+-- Try the scraped manga_url first, then a trimmed /segment1/segment2
+-- fallback if the first response yields no chapter items.
 function TachiKindleSource:fetchChapterList(manga_url)
     if self.adapter and self.adapter.fetchChapterList then
         return self.adapter.fetchChapterList(self, manga_url)
     end
-    local trimmed_url = manga_url:match("^(https?://[^/]+/[^/]+/[^/]+)")  or manga_url
-    local url, err = self:resolveUrl("chapter_list", { manga_url = trimmed_url })
-    if not url then return nil, err end
-    logger.info("TachiKindle: fetching chapter list from " .. tostring(url))
-    local body, ferr = self:fetch(url)
-    if not body then
-        logger.info("TachiKindle: chapter list fetch failed: " .. tostring(ferr))
-        return nil, ferr
-    end
-    logger.info("TachiKindle: chapter list body length " .. #body)
 
-    local root = htmlparser.parse(body, 5000)
+    local candidates = { manga_url }
+    local trimmed = manga_url:match("^(https?://[^/]+/[^/]+/[^/]+)")
+    if trimmed and trimmed ~= manga_url then
+        table.insert(candidates, trimmed)
+    end
+
     local sel = self.def.selectors
-    local items = root:select(sel.chapter_item)
-    logger.info("TachiKindle: chapter_item selector '" .. tostring(sel.chapter_item) .. "' matched " .. #items .. " items")
-    local list = {}
-    for _, item in ipairs(items) do
-        local chapter_url = normalizeUrl(self.def.base_url, applySelector(item, sel.chapter_url))
-        if chapter_url then
-            table.insert(list, {
-                title = applySelector(item, sel.chapter_title),
-                url = chapter_url,
-                date = sel.chapter_date and applySelector(item, sel.chapter_date) or nil,
-            })
+    local saw_body = false
+    local last_list = {}
+    local last_err
+
+    for _, candidate in ipairs(candidates) do
+        local url, err = self:resolveUrl("chapter_list", { manga_url = candidate })
+        if not url then
+            last_err = err
+        else
+            logger.info("TachiKindle: fetching chapter list from " .. tostring(url))
+            local body, ferr = self:fetch(url)
+            if body then
+                saw_body = true
+                logger.info("TachiKindle: chapter list body length " .. #body)
+
+                local root = htmlparser.parse(body, 5000)
+                local items = root:select(sel.chapter_item)
+                logger.info("TachiKindle: chapter_item selector '" .. tostring(sel.chapter_item) .. "' matched " .. #items .. " items")
+                local list = {}
+                for _, item in ipairs(items) do
+                    local chapter_url = normalizeUrl(self.def.base_url, applySelector(item, sel.chapter_url))
+                    if chapter_url then
+                        table.insert(list, {
+                            title = applySelector(item, sel.chapter_title),
+                            url = chapter_url,
+                            date = sel.chapter_date and applySelector(item, sel.chapter_date) or nil,
+                        })
+                    end
+                end
+                if #list > 0 then
+                    return list
+                end
+                last_list = list
+            else
+                logger.info("TachiKindle: chapter list fetch failed: " .. tostring(ferr))
+                last_err = ferr
+            end
         end
     end
-    return list
+
+    if saw_body then
+        return last_list
+    end
+    return nil, last_err
 end
 
 -- Page image URLs for a chapter -> { url, url, ... }.
