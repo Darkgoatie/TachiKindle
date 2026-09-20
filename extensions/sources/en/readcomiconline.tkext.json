@@ -1,0 +1,56 @@
+{
+  "id": "en.readcomiconline",
+  "name": "ReadComicOnline",
+  "lang": "en",
+  "base_url": "https://readcomiconline.li",
+  "version_code": 1,
+  "content_warning": "SAFE",
+  "adapter": "readcomiconline",
+  "client": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "extra_headers": {"Referer": "https://readcomiconline.li/"}
+  },
+  "endpoints": {
+    "popular": {"method": "GET", "path": "/ComicList/MostPopular?page={page}"},
+    "latest": {"method": "GET", "path": "/ComicList/LatestUpdate?page={page}"},
+    "search": {"method": "GET", "path": "/AdvanceSearch?comicName={query}&page={page}&status=&ig=&eg="},
+    "manga_details": {"method": "GET", "path": "{manga_url}"},
+    "chapter_list": {"method": "GET", "path": "{manga_url}"},
+    "page_list": {"method": "GET", "path": "{chapter_url}&s=&quality=hq&readType=1"}
+  },
+  "selectors": {
+    "manga_list_item": ".list-comic > .item",
+    "manga_title": "a",
+    "manga_url": {"sel": "a", "attr": "href"},
+    "manga_cover": {"sel": "img", "attr": "src"},
+    "details_title": "div.barContent a.bigChar",
+    "chapter_item": "table.listing tr",
+    "chapter_title": "a",
+    "chapter_url": {"sel": "a", "attr": "href"},
+    "page_image": null
+  },
+  "_selectors_note": "The mandatory adapter implements complete parsing and skips the first two chapter-table rows. page_image is null because pages are decoded from script data, not image elements.",
+  "pagination": {"strategy": "has_next_selector"},
+  "date_format": "%m/%d/%Y",
+  "reader": {"server": "", "quality": "hq"},
+  "filters": [],
+  "upstream": {
+    "project": "https://github.com/keiyoushi/extensions-source",
+    "path": "src/en/readcomiconline/src/eu/kanade/tachiyomi/extension/en/readcomiconline/Readcomiconline.kt",
+    "version_code": 44,
+    "decoder": "https://github.com/keiyoushi/rco-script/blob/main/decrypt.json",
+    "license": "Apache-2.0",
+    "attribution": "Keiyoushi contributors; static Lua adaptation for TachiKindle. Decoder configuration is never downloaded at runtime."
+  },
+  "limitations": [
+    "CAPTCHA and site protection are not solved; browser cookie sharing is not implemented.",
+    "Advanced genre/status/year/publisher/author filters, URL search, and the reader preference UI are not ported.",
+    "Static decoder supports the inspected upstream string transformations, not arbitrary or future JavaScript.",
+    "Reader image retrieval was deliberately not tested; only synthetic URL fixtures are used."
+  ],
+  "verification": {
+    "fixture_tests": "tests/test_readcomiconline_adapter.lua",
+    "live_metadata": "2026-09-20: readcomiconline.li and upstream mirror rcostation.xyz failed DNS lookup from this environment (getaddrinfo Errno 11002). No live success claimed.",
+    "status": "fixture-tested; live-unverified"
+  }
+}
