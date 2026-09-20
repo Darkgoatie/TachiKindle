@@ -101,6 +101,7 @@ function TachiKindleSource:fetch(url, options)
         ["Accept-Encoding"] = "identity",
         ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         ["Accept-Language"] = "en-US,en;q=0.9",
+        ["Connection"] = "close",
     }
     local client = self.def.client or {}
     if client.user_agent then headers["User-Agent"] = client.user_agent end
@@ -108,7 +109,7 @@ function TachiKindleSource:fetch(url, options)
     for k, v in pairs(options.headers or {}) do headers[k] = v end
     if options.body then headers["Content-Length"] = tostring(#options.body) end
 
-    local attempts = 3
+    local attempts = 6
     local last_err
     for i = 1, attempts do
         local sink = {}
@@ -134,7 +135,7 @@ function TachiKindleSource:fetch(url, options)
             or lower:match("closed")
             or lower:match("refused")
         if i < attempts and transient then
-            socket.sleep(0.25 * i)
+            socket.sleep(0.4 * i)
         else
             break
         end

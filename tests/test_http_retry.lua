@@ -55,7 +55,7 @@ assert(body == "ok")
 assert(err == nil)
 assert(call_count == 3)
 assert(#sleep_calls == 2)
-assert(sleep_calls[1] == 0.25 and sleep_calls[2] == 0.5)
+assert(sleep_calls[1] == 0.4 and sleep_calls[2] == 0.8)
 
 os.remove(p)
 print("HTTP retry test PASS")
