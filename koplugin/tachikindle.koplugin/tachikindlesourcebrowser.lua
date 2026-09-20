@@ -801,6 +801,50 @@ function TachiKindleSourceBrowser:downloadChapterForOffline(source, chapter, for
     if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
 end
 
+function TachiKindleSourceBrowser:getNextChapter(source, chapter)
+    local chapters = self.current_chapters
+    if (not chapters or #chapters == 0) and self.current_manga and self.current_manga.url then
+        local fetched = source:fetchChapterList(self.current_manga.url)
+        if fetched and #fetched > 0 then
+            chapters = fetched
+            self.current_chapters = fetched
+        end
+    end
+    if not chapters then return nil end
+
+    for i, ch in ipairs(chapters) do
+        if ch.url == chapter.url then
+            return chapters[i + 1]
+        end
+    end
+    return nil
+end
+
+function TachiKindleSourceBrowser:maybeAdvanceToNextChapter(source, chapter)
+    local next_chapter = self:getNextChapter(source, chapter)
+    if not next_chapter then return end
+
+    local function advance()
+        self:openChapter(source, next_chapter)
+    end
+
+    local downloaded = source:isChapterDownloaded(chapter.url)
+    if not downloaded then
+        advance()
+        return
+    end
+
+    local dialog
+    dialog = ButtonDialog:new{
+        buttons = {
+            {{ text = _("Delete cache + Next chapter"), callback = function() UIManager:close(dialog); source:deleteChapterCache(chapter.url); advance() end, align = "left" }},
+            {{ text = _("Keep cache + Next chapter"), callback = function() UIManager:close(dialog); advance() end, align = "left" }},
+            {{ text = _("Stay here"), callback = function() UIManager:close(dialog) end, align = "left" }},
+        },
+    }
+    UIManager:show(dialog)
+end
+
 function TachiKindleSourceBrowser:openSource(source, page)
     page = page or 1
     local loading = InfoMessage:new{ text = _("Loading…") }
@@ -1068,8 +1112,11 @@ function TachiKindleSourceBrowser:openChapter(source, chapter)
 
     TachiKindleReader.show(source, chapter.url, pages, chapter.title, {
         start_page = start_page,
-        on_progress = function(page, total, _closing)
+        on_progress = function(page, total, closing)
             TachiKindleProgress:updateProgress(source.def.id, source.def.name, chapter_manga, chapter, page, total)
+            if closing and (tonumber(page) or 0) >= (tonumber(total) or 0) then
+                self:maybeAdvanceToNextChapter(source, chapter)
+            end
         end,
     })
 end
