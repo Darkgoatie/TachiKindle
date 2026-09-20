@@ -225,6 +225,7 @@ function TachiKindle:onTachiKindleOpen()
 end
 
 function TachiKindle:showRepoList()
+    self:loadSettings()
     self.browser = TachiKindleBrowser:new{
         plugin = self,
         title = _("Extensions Manager"),

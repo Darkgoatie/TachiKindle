@@ -44,7 +44,8 @@ end
 
 function TachiKindleBrowser:genRepoItemTable()
     local item_table = {}
-    for i, repo in ipairs(self.plugin.repos) do
+    local repos = self.plugin and self.plugin.repos or {}
+    for i, repo in ipairs(repos) do
         table.insert(item_table, {
             text = repo.title or repo.url,
             mandatory_dim = true,
