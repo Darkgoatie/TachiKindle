@@ -42,7 +42,22 @@ function TachiKindleSource:load(path)
         return nil, "invalid JSON in " .. path
     end
 
-    return setmetatable({ def = def }, self)
+    -- Only bundled adapters are executable; repository JSON cannot name arbitrary modules.
+    local adapters = {
+        readallcomics = "adapters/readallcomics",
+        xoxocomics = "adapters/xoxocomics",
+        readcomiconline = "adapters/readcomiconline",
+        batcave = "adapters/batcave",
+    }
+    local adapter
+    if def.adapter then
+        local module = adapters[def.adapter]
+        if not module then return nil, "unsupported adapter: " .. tostring(def.adapter) end
+        local loaded, result = pcall(require, module)
+        if not loaded then return nil, "adapter unavailable: " .. tostring(result) end
+        adapter = result
+    end
+    return setmetatable({ def = def, adapter = adapter }, self)
 end
 
 -- Fill {placeholders} in an endpoint path template. query is
@@ -80,7 +95,8 @@ end
 -- for a browser-shaped Accept header. Confirmed live: same URL, same
 -- UA, only the Accept header differed between a 300-byte stub and a
 -- real 247KB page with all 133 chapters.
-function TachiKindleSource:fetch(url)
+function TachiKindleSource:fetch(url, options)
+    options = options or {}
     local sink = {}
     local headers = {
         ["Accept-Encoding"] = "identity",
@@ -90,11 +106,14 @@ function TachiKindleSource:fetch(url)
     local client = self.def.client or {}
     if client.user_agent then headers["User-Agent"] = client.user_agent end
     for k, v in pairs(client.extra_headers or {}) do headers[k] = v end
+    for k, v in pairs(options.headers or {}) do headers[k] = v end
+    if options.body then headers["Content-Length"] = tostring(#options.body) end
 
     socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
     local ok, code = pcall(function()
         return socket.skip(1, http.request{
-            url = url, method = "GET", headers = headers,
+            url = url, method = options.method or "GET", headers = headers,
+            source = options.body and ltn12.source.string(options.body) or nil,
             sink = ltn12.sink.table(sink),
         })
     end)
@@ -236,6 +255,9 @@ end
 -- which returned wrong/empty results against the live site).
 local SEARCH_PAGE_SIZE = 32
 function TachiKindleSource:fetchMangaList(endpoint_name, page, query)
+    if self.adapter and self.adapter.fetchMangaList then
+        return self.adapter.fetchMangaList(self, endpoint_name, page or 1, query or "")
+    end
     page = page or 1
     local url, err = self:resolveUrl(endpoint_name, {
         page = page,
@@ -263,6 +285,9 @@ end
 
 -- Manga details page -> { title, author, description, status, genres, cover }
 function TachiKindleSource:fetchMangaDetails(manga_url)
+    if self.adapter and self.adapter.fetchMangaDetails then
+        return self.adapter.fetchMangaDetails(self, manga_url)
+    end
     local url, err = self:resolveUrl("manga_details", { manga_url = manga_url })
     if not url then return nil, err end
     local body, ferr = self:fetch(url)
@@ -296,6 +321,9 @@ end
 -- moved or deleted"). Strip back to base_url + first two path segments
 -- before resolving this one endpoint.
 function TachiKindleSource:fetchChapterList(manga_url)
+    if self.adapter and self.adapter.fetchChapterList then
+        return self.adapter.fetchChapterList(self, manga_url)
+    end
     local trimmed_url = manga_url:match("^(https?://[^/]+/[^/]+/[^/]+)")  or manga_url
     local url, err = self:resolveUrl("chapter_list", { manga_url = trimmed_url })
     if not url then return nil, err end
@@ -328,26 +356,37 @@ end
 -- Page image URLs for a chapter -> { url, url, ... }.
 -- If online fetch fails, falls back to previously cached page-list metadata.
 function TachiKindleSource:fetchPageList(chapter_url)
-    local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
-    if not url then return nil, err end
-    local body, ferr = self:fetch(url)
-    if body then
-        local root = htmlparser.parse(body, 5000)
-        local sel = self.def.selectors
-        local pages = {}
-        for _, img in ipairs(root:select(sel.page_image.sel)) do
-            local v = img.attributes[sel.page_image.attr]
-            if (not v or v == "") and sel.page_image.fallback_attr then
-                v = img.attributes[sel.page_image.fallback_attr]
+    local pages, ferr
+    if self.adapter and self.adapter.fetchPages then
+        pages, ferr = self.adapter.fetchPages(self, chapter_url)
+    else
+        local url, err = self:resolveUrl("page_list", { chapter_url = chapter_url })
+        if not url then return nil, err end
+        local body
+        body, ferr = self:fetch(url)
+        if body then
+            if self.adapter and self.adapter.parsePages then
+                pages, ferr = self.adapter.parsePages(self, body, chapter_url)
+            else
+                local root = htmlparser.parse(body, 5000)
+                local sel = self.def.selectors
+                pages = {}
+                for _, img in ipairs(root:select(sel.page_image.sel)) do
+                    local v = img.attributes[sel.page_image.attr]
+                    if (not v or v == "") and sel.page_image.fallback_attr then
+                        v = img.attributes[sel.page_image.fallback_attr]
+                    end
+                    v = normalizeUrl(self.def.base_url, v)
+                    if v then table.insert(pages, v) end
+                end
             end
-            v = normalizeUrl(self.def.base_url, v)
-            if v then table.insert(pages, v) end
         end
-        if #pages > 0 then
-            self:savePageListCache(chapter_url, pages)
-        end
+    end
+    if pages and #pages > 0 then
+        self:savePageListCache(chapter_url, pages)
         return pages
     end
+    ferr = ferr or "No page images found; the site may require browser access or its layout has changed."
 
     local cached_pages = self:loadPageListCache(chapter_url)
     if cached_pages and #cached_pages > 0 then

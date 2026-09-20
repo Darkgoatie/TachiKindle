@@ -9,6 +9,7 @@
     "lang":          { "type": "string" },
     "base_url":      { "type": "string", "pattern": "^https://" },
     "version_code":  { "type": "integer", "minimum": 1 },
+    "adapter": { "enum": ["readallcomics", "xoxocomics", "readcomiconline", "batcave"], "description": "Optional bundled KOReader adapter for sources that cannot be represented by CSS selectors alone. Requires the plugin version shipping that adapter; it never loads executable code from the extension repository." },
     "content_warning": { "enum": ["SAFE", "MIXED", "NSFW"] },
     "theme":         { "type": "string", "description": "optional: name of a shared theme this extension is based on, resolved against extensions/themes/<theme>.tkext.json for defaults this file overrides" },
 
