@@ -31,6 +31,9 @@ local JSON = require("json")
 local util = require("util")
 local _ = require("gettext")
 
+local LEGACY_REPO_URL = "https://raw.githubusercontent.com/Darkgoatie/TachiKindle/main/extensions/testrepo"
+local DEFAULT_REPO_URL = "https://raw.githubusercontent.com/Darkgoatie/tachikindle-sources/main"
+
 local TachiKindle = WidgetContainer:extend{
     name = "tachikindle",
     is_doc_only = false,
@@ -40,7 +43,7 @@ local TachiKindle = WidgetContainer:extend{
     default_repos = {
         {
             title = "TachiKindle Sources",
-            url = "https://raw.githubusercontent.com/Darkgoatie/tachikindle-sources/main",
+            url = DEFAULT_REPO_URL,
         },
     },
 }
@@ -63,6 +66,28 @@ function TachiKindle:loadSettings()
     if self.settings then return end
     self.settings = LuaSettings:open(self.settings_file)
     self.repos = self.settings:readSetting("repos", self.default_repos)
+
+    local changed = false
+    local has_default = false
+    for _, repo in ipairs(self.repos) do
+        if repo.url == LEGACY_REPO_URL then
+            repo.url = DEFAULT_REPO_URL
+            if not repo.title or repo.title == LEGACY_REPO_URL then
+                repo.title = "TachiKindle Sources"
+            end
+            changed = true
+        end
+        if repo.url == DEFAULT_REPO_URL then
+            has_default = true
+        end
+    end
+    if not has_default then
+        table.insert(self.repos, 1, { title = "TachiKindle Sources", url = DEFAULT_REPO_URL })
+        changed = true
+    end
+    if changed then
+        self:saveRepos()
+    end
 end
 
 function TachiKindle:saveRepos()
