@@ -599,7 +599,9 @@ function TachiKindleSourceBrowser:markChapterRead(source, chapter, is_read)
         text = is_read and _("Marked as read") or _("Marked as unread"),
         timeout = 1,
     })
-    if self.refresh_current_list then
+    if self.screen == SCREEN_CHAPTER_LIST and self.current_manga then
+        self:openManga(source, self.current_manga)
+    elseif self.refresh_current_list then
         self.refresh_current_list()
     end
 end
@@ -621,7 +623,9 @@ function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
         text = (is_read and _("Marked read: ") or _("Marked unread: ")) .. tostring(count) .. _(" chapters"),
         timeout = 1,
     })
-    if self.refresh_current_list then
+    if self.screen == SCREEN_CHAPTER_LIST and self.current_manga then
+        self:openManga(source, self.current_manga)
+    elseif self.refresh_current_list then
         self.refresh_current_list()
     end
 end
