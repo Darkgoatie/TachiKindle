@@ -485,6 +485,8 @@ function TachiKindleSourceBrowser:showChapterActions(item)
             {{ text = _("Queue low"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 9) end, align = "left" }},
             {{ text = _("Mark as read"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, true) end, align = "left" }},
             {{ text = _("Mark as unread"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, false) end, align = "left" }},
+            {{ text = _("Mark read until here"), callback = function() UIManager:close(dialog); self:markChapterRangeRead(source, item, true) end, align = "left" }},
+            {{ text = _("Mark unread until here"), callback = function() UIManager:close(dialog); self:markChapterRangeRead(source, item, false) end, align = "left" }},
             {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end, align = "left" }},
         },
     }
@@ -534,6 +536,28 @@ function TachiKindleSourceBrowser:markChapterRead(source, chapter, is_read)
     TachiKindleProgress:markRead(source.def.id, source.def.name, self.current_manga, chapter, is_read)
     UIManager:show(InfoMessage:new{
         text = is_read and _("Marked as read") or _("Marked as unread"),
+        timeout = 1,
+    })
+    if self.refresh_current_list then
+        self.refresh_current_list()
+    end
+end
+
+function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
+    local chapters = item.chapter_list or self.current_chapters
+    local idx = tonumber(item.chapter_index)
+    if not chapters or not idx or idx < 1 or idx > #chapters then
+        self:markChapterRead(source, item.chapter, is_read)
+        return
+    end
+
+    local count = 0
+    for i = idx, #chapters do
+        TachiKindleProgress:markRead(source.def.id, source.def.name, self.current_manga, chapters[i], is_read)
+        count = count + 1
+    end
+    UIManager:show(InfoMessage:new{
+        text = (is_read and _("Marked read: ") or _("Marked unread: ")) .. tostring(count) .. _(" chapters"),
         timeout = 1,
     })
     if self.refresh_current_list then
@@ -737,6 +761,7 @@ function TachiKindleSourceBrowser:openManga(source, manga)
     end
 
     self.screen = SCREEN_CHAPTER_LIST
+    self.current_chapters = chapters
     local item_table = {
         {
             text = _("← Back"),
@@ -773,7 +798,7 @@ function TachiKindleSourceBrowser:openManga(source, manga)
         {
             text = _("Continue latest in-progress"),
             callback = function()
-                for _, c in ipairs(chapters) do
+                for i, c in ipairs(chapters) do
                     local pr = TachiKindleProgress:getChapterProgress(source.def.id, c.url)
                     if pr and not pr.is_read and (tonumber(pr.last_page) or 0) > 0 then
                         self:openChapter(source, c)
@@ -798,6 +823,8 @@ function TachiKindleSourceBrowser:openManga(source, manga)
             text = prefix .. (c.date and (c.title .. "  (" .. c.date .. ")") or c.title),
             source = source,
             chapter = c,
+            chapter_index = i,
+            chapter_list = chapters,
         })
     end
     self:switchItemTable(manga.title, item_table)
