@@ -108,9 +108,52 @@ function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title, o
     end
 
     -- Disable tap-to-open viewer controls (rotate/close menu) to avoid
-    -- accidental popups while reading. Swipes still change pages.
+    -- accidental popups while reading.
     function viewer:onTap(_arg, _ges)
         return true
+    end
+
+    local function prevPage()
+        local target = math.max(1, (tonumber(viewer.current_image) or current_page or 1) - 1)
+        if target ~= (tonumber(viewer.current_image) or current_page or 1) then
+            viewer:switchToImageNum(target)
+        end
+        return true
+    end
+
+    local function nextPage()
+        local target = math.min(total_pages, (tonumber(viewer.current_image) or current_page or 1) + 1)
+        if target ~= (tonumber(viewer.current_image) or current_page or 1) then
+            viewer:switchToImageNum(target)
+        end
+        return true
+    end
+
+    -- Explicit horizontal swipe paging (left/right) so slide gestures always
+    -- advance pages even when default viewer gesture behavior changes.
+    function viewer:onSwipe(_arg, ges)
+        local dir = ges and (ges.direction or ges.gesture)
+        if dir == "west" or dir == "left" then
+            return nextPage()
+        elseif dir == "east" or dir == "right" then
+            return prevPage()
+        end
+
+        local dx = 0
+        local dy = 0
+        if ges then
+            dx = tonumber(ges.dx or (ges.distance and ges.distance.x)) or 0
+            dy = tonumber(ges.dy or (ges.distance and ges.distance.y)) or 0
+            if dx == 0 and ges.pos and ges.start_pos then
+                dx = tonumber(ges.pos.x) - tonumber(ges.start_pos.x)
+                dy = tonumber(ges.pos.y) - tonumber(ges.start_pos.y)
+            end
+        end
+        if math.abs(dx) > math.abs(dy) and dx ~= 0 then
+            if dx < 0 then return nextPage() end
+            return prevPage()
+        end
+        return false
     end
 
     UIManager:show(viewer)
