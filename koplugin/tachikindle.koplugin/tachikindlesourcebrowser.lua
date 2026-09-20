@@ -418,7 +418,11 @@ function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count, pri
             priority = priority,
         })
     end
-    UIManager:show(InfoMessage:new{ text = string.format("Queued %d chapters. Jobs: %d", count, qn), timeout = 2 })
+    local r = source:processQueue(1)
+    UIManager:show(InfoMessage:new{
+        text = string.format("Queued %d chapters. Downloaded now: %d. Remaining: %d", count, r.done or 0, r.remaining or qn),
+        timeout = 2,
+    })
 end
 
 function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, priority, want_read)
@@ -432,7 +436,7 @@ function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, pr
 end
 
 function TachiKindleSourceBrowser:processDownloadQueue()
-    local MAX_QUEUE_BATCH = 5
+    local MAX_QUEUE_BATCH = 1
     local done, failed = 0, 0
     local budget = MAX_QUEUE_BATCH
     local sources = self:loadAllSources()
@@ -657,13 +661,17 @@ function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
 end
 
 function TachiKindleSourceBrowser:queueChapter(source, chapter, priority)
-    local n = source:enqueueChapter({
+    source:enqueueChapter({
         chapter_url = chapter.url,
         chapter_title = chapter.title,
         manga_title = self.current_manga and self.current_manga.title or nil,
         priority = priority,
     })
-    UIManager:show(InfoMessage:new{ text = _("Queued. Jobs: ") .. tostring(n), timeout = 1 })
+    local r = source:processQueue(1)
+    UIManager:show(InfoMessage:new{
+        text = string.format("Queued. Downloaded now: %d. Remaining: %d", r.done or 0, r.remaining or 0),
+        timeout = 1,
+    })
 end
 
 function TachiKindleSourceBrowser:verifyOfflineChapter(source, chapter)
