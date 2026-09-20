@@ -339,6 +339,22 @@ function TachiKindleSourceBrowser:importOfflineManifest()
     if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
 end
 
+local function isChapterRead(source, chapter)
+    local progress = TachiKindleProgress:getChapterProgress(source.def.id, chapter.url)
+    return progress and progress.is_read == true
+end
+
+local function filterChaptersByReadState(source, chapters, want_read)
+    local filtered = {}
+    for _, ch in ipairs(chapters or {}) do
+        local is_read = isChapterRead(source, ch)
+        if (want_read and is_read) or ((not want_read) and (not is_read)) then
+            table.insert(filtered, ch)
+        end
+    end
+    return filtered
+end
+
 function TachiKindleSourceBrowser:downloadChapterRange(source, chapters, count, force)
     count = math.min(tonumber(count) or 0, #chapters)
     if count <= 0 then return end
@@ -355,6 +371,16 @@ function TachiKindleSourceBrowser:downloadChapterRange(source, chapters, count, 
     UIManager:show(InfoMessage:new{ text = string.format("Downloaded %d chapters (failed %d)", done, failed), timeout = 2 })
 end
 
+function TachiKindleSourceBrowser:downloadFilteredRange(source, chapters, count, force, want_read)
+    local filtered = filterChaptersByReadState(source, chapters, want_read)
+    if #filtered == 0 then
+        UIManager:show(InfoMessage:new{ text = want_read and _("No read chapters to download") or _("No unread chapters to download"), timeout = 1 })
+        return
+    end
+    local n = math.min(tonumber(count) or #filtered, #filtered)
+    self:downloadChapterRange(source, filtered, n, force)
+end
+
 function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count, priority)
     count = math.min(tonumber(count) or 0, #chapters)
     local qn = 0
@@ -368,6 +394,16 @@ function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count, pri
         })
     end
     UIManager:show(InfoMessage:new{ text = string.format("Queued %d chapters. Jobs: %d", count, qn), timeout = 2 })
+end
+
+function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, priority, want_read)
+    local filtered = filterChaptersByReadState(source, chapters, want_read)
+    if #filtered == 0 then
+        UIManager:show(InfoMessage:new{ text = want_read and _("No read chapters to queue") or _("No unread chapters to queue"), timeout = 1 })
+        return
+    end
+    local n = math.min(tonumber(count) or #filtered, #filtered)
+    self:queueChapterRange(source, filtered, n, priority)
 end
 
 function TachiKindleSourceBrowser:processDownloadQueue()
@@ -788,8 +824,28 @@ function TachiKindleSourceBrowser:openManga(source, manga)
             callback = function() self:downloadChapterRange(source, chapters, 10, false) end,
         },
         {
+            text = _("Download next 10 unread"),
+            callback = function() self:downloadFilteredRange(source, chapters, 10, false, false) end,
+        },
+        {
+            text = _("Download next 10 read"),
+            callback = function() self:downloadFilteredRange(source, chapters, 10, false, true) end,
+        },
+        {
             text = _("Queue next 10 chapters"),
             callback = function() self:queueChapterRange(source, chapters, 10, 5) end,
+        },
+        {
+            text = _("Queue next 10 unread"),
+            callback = function() self:queueFilteredRange(source, chapters, 10, 5, false) end,
+        },
+        {
+            text = _("Queue next 10 read"),
+            callback = function() self:queueFilteredRange(source, chapters, 10, 5, true) end,
+        },
+        {
+            text = _("Queue all unread"),
+            callback = function() self:queueFilteredRange(source, chapters, #chapters, 5, false) end,
         },
         {
             text = _("Queue all chapters"),
