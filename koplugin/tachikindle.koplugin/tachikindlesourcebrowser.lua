@@ -473,9 +473,9 @@ function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count)
             skipped_queued = skipped_queued + 1
         end
     end
-    local r = self:processDownloadQueue(nil, true)
+    local r = self:processDownloadQueue(1, true)
     UIManager:show(InfoMessage:new{
-        text = string.format("Queue add: %d, already downloaded: %d, already queued: %d. Downloaded now: %d. Waiting: %d", added, skipped_downloaded, skipped_queued, r.done or 0, r.remaining or 0),
+        text = string.format("Queue add: %d, already downloaded: %d, already queued: %d. Started now: %d. Waiting: %d", added, skipped_downloaded, skipped_queued, r.done or 0, r.remaining or 0),
         timeout = 2,
     })
 end
@@ -750,9 +750,9 @@ function TachiKindleSourceBrowser:queueChapter(source, chapter)
         return
     end
 
-    local r = self:processDownloadQueue(nil, true)
+    local r = self:processDownloadQueue(1, true)
     UIManager:show(InfoMessage:new{
-        text = string.format("Added to download queue. Downloaded now: %d. Waiting: %d", r.done or 0, r.remaining or 0),
+        text = string.format("Added to download queue. Started now: %d. Waiting: %d", r.done or 0, r.remaining or 0),
         timeout = 1,
     })
 end
