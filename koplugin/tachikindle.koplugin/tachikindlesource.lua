@@ -494,6 +494,24 @@ function TachiKindleSource:chapterCacheStats(chapter_url)
     }
 end
 
+function TachiKindleSource:isChapterDownloaded(chapter_url)
+    local stats = self:chapterCacheStats(chapter_url)
+    if stats.complete then
+        return true, stats
+    end
+    local meta = self:loadChapterMeta(chapter_url)
+    if meta and meta.complete == true then
+        return true, {
+            total = tonumber(meta.total) or 0,
+            saved = tonumber(meta.saved) or 0,
+            failed = tonumber(meta.failed) or 0,
+            complete = true,
+            size_bytes = tonumber(meta.size_bytes) or 0,
+        }
+    end
+    return false, stats
+end
+
 -- Best-effort prefetch for offline reading: saves page list + every page image.
 -- opts:
 --   force=true         redownload all pages
@@ -501,6 +519,19 @@ end
 --   chapter_title=string persisted in chapter metadata
 function TachiKindleSource:prefetchChapter(chapter_url, opts)
     opts = opts or {}
+
+    if not opts.force then
+        local already_downloaded, stats = self:isChapterDownloaded(chapter_url)
+        if already_downloaded then
+            return {
+                total = stats.total or 0,
+                saved = stats.saved or 0,
+                failed = 0,
+                skipped = true,
+            }
+        end
+    end
+
     local pages, err = self:fetchPageList(chapter_url)
     if not pages then return nil, err end
 
@@ -639,6 +670,22 @@ end
 function TachiKindleSource:enqueueChapter(job)
     local q = self:loadQueue()
     job = job or {}
+
+    if not job.chapter_url then
+        return #q, "missing_chapter_url"
+    end
+
+    local already_downloaded = self:isChapterDownloaded(job.chapter_url)
+    if already_downloaded then
+        return #q, "already_downloaded"
+    end
+
+    for _, existing in ipairs(q) do
+        if existing.source_id == self.def.id and existing.chapter_url == job.chapter_url then
+            return #q, "already_queued"
+        end
+    end
+
     job.source_id = self.def.id
     job.source_name = self.def.name
     job.created_at = os.time()
@@ -647,7 +694,7 @@ function TachiKindleSource:enqueueChapter(job)
         return (a.created_at or 0) < (b.created_at or 0)
     end)
     self:saveQueue(q)
-    return #q
+    return #q, "queued"
 end
 
 function TachiKindleSource:removeQueueJob(index)
@@ -680,7 +727,7 @@ function TachiKindleSource:processQueue(max_jobs)
                 manga_title = job.manga_title,
                 chapter_title = job.chapter_title,
             })
-            if result and result.total > 0 and result.saved > 0 then
+            if result and (result.skipped or (result.total > 0 and result.saved > 0)) then
                 table.remove(q, i)
                 done = done + 1
             else

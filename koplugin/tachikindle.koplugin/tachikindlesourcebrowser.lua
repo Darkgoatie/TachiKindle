@@ -426,7 +426,7 @@ end
 function TachiKindleSourceBrowser:downloadChapterRange(source, chapters, count, force)
     count = math.min(tonumber(count) or 0, #chapters)
     if count <= 0 then return end
-    local done, failed = 0, 0
+    local done, failed, skipped = 0, 0, 0
     for i = 1, count do
         local ch = chapters[i]
         local result = source:prefetchChapter(ch.url, {
@@ -434,9 +434,15 @@ function TachiKindleSourceBrowser:downloadChapterRange(source, chapters, count, 
             chapter_title = ch.title,
             manga_title = self.current_manga and self.current_manga.title or nil,
         })
-        if result and result.saved > 0 then done = done + 1 else failed = failed + 1 end
+        if result and result.skipped then
+            skipped = skipped + 1
+        elseif result and result.saved > 0 then
+            done = done + 1
+        else
+            failed = failed + 1
+        end
     end
-    UIManager:show(InfoMessage:new{ text = string.format("Downloaded %d chapters (failed %d)", done, failed), timeout = 2 })
+    UIManager:show(InfoMessage:new{ text = string.format("Downloaded %d chapters, skipped %d already downloaded (failed %d)", done, skipped, failed), timeout = 2 })
 end
 
 function TachiKindleSourceBrowser:downloadFilteredRange(source, chapters, count, force, want_read)
@@ -451,17 +457,25 @@ end
 
 function TachiKindleSourceBrowser:queueChapterRange(source, chapters, count)
     count = math.min(tonumber(count) or 0, #chapters)
+    local added, skipped_downloaded, skipped_queued = 0, 0, 0
     for i = 1, count do
         local ch = chapters[i]
-        source:enqueueChapter({
+        local _, status = source:enqueueChapter({
             chapter_url = ch.url,
             chapter_title = ch.title,
             manga_title = self.current_manga and self.current_manga.title or nil,
         })
+        if status == "queued" then
+            added = added + 1
+        elseif status == "already_downloaded" then
+            skipped_downloaded = skipped_downloaded + 1
+        elseif status == "already_queued" then
+            skipped_queued = skipped_queued + 1
+        end
     end
     local r = self:processDownloadQueue(nil, true)
     UIManager:show(InfoMessage:new{
-        text = string.format("Added %d to download queue. Downloaded now: %d. Waiting: %d", count, r.done or 0, r.remaining or 0),
+        text = string.format("Queue add: %d, already downloaded: %d, already queued: %d. Downloaded now: %d. Waiting: %d", added, skipped_downloaded, skipped_queued, r.done or 0, r.remaining or 0),
         timeout = 2,
     })
 end
@@ -721,11 +735,21 @@ function TachiKindleSourceBrowser:markChapterRangeRead(source, item, is_read)
 end
 
 function TachiKindleSourceBrowser:queueChapter(source, chapter)
-    source:enqueueChapter({
+    local _, status = source:enqueueChapter({
         chapter_url = chapter.url,
         chapter_title = chapter.title,
         manga_title = self.current_manga and self.current_manga.title or nil,
     })
+
+    if status == "already_downloaded" then
+        UIManager:show(InfoMessage:new{ text = _("Already downloaded"), timeout = 1 })
+        return
+    end
+    if status == "already_queued" then
+        UIManager:show(InfoMessage:new{ text = _("Already in download queue"), timeout = 1 })
+        return
+    end
+
     local r = self:processDownloadQueue(nil, true)
     UIManager:show(InfoMessage:new{
         text = string.format("Added to download queue. Downloaded now: %d. Waiting: %d", r.done or 0, r.remaining or 0),
@@ -758,6 +782,11 @@ function TachiKindleSourceBrowser:downloadChapterForOffline(source, chapter, for
         manga_title = self.current_manga and self.current_manga.title or nil,
     })
     UIManager:close(loading)
+
+    if result and result.skipped then
+        UIManager:show(InfoMessage:new{ text = _("Already downloaded"), timeout = 1 })
+        return
+    end
 
     if not result then
         UIManager:show(InfoMessage:new{ text = _("Offline download failed: ") .. tostring(err) })
