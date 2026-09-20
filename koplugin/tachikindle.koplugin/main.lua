@@ -40,7 +40,7 @@ local TachiKindle = WidgetContainer:extend{
     default_repos = {
         {
             title = "TachiKindle Sources",
-            url = "https://raw.githubusercontent.com/Darkgoatie/TachiKindle/main/extensions/testrepo",
+            url = "https://raw.githubusercontent.com/Darkgoatie/tachikindle-sources/main",
         },
     },
 }
@@ -106,7 +106,7 @@ function TachiKindle:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Manage Repos"),
+                text = _("Extensions Manager"),
                 callback = function()
                     self:showRepoList()
                 end,
@@ -202,7 +202,7 @@ end
 function TachiKindle:showRepoList()
     self.browser = TachiKindleBrowser:new{
         plugin = self,
-        title = _("TachiKindle Repos"),
+        title = _("Extensions Manager"),
         is_popout = false,
         is_borderless = true,
         title_bar_fm_style = true,
