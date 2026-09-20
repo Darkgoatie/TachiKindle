@@ -81,43 +81,30 @@ function TachiKindleSourceBrowser:loadAllSources()
 end
 
 function TachiKindleSourceBrowser:genSourceItemTable()
-    local item_table = {}
-
-    local sources = {}
+    local item_table = {
+        {
+            text = _("Continue Reading"),
+            callback = function() self:showContinueReading() end,
+        },
+        {
+            text = _("Reading Analytics"),
+            callback = function() self:showAnalytics() end,
+        },
+        {
+            text = _("Offline Library"),
+            callback = function() self:showOfflineLibrary() end,
+        },
+        {
+            text = _("Process download queue"),
+            callback = function() self:processDownloadQueue() end,
+        },
+    }
     for _, source in pairs(self:loadAllSources()) do
-        table.insert(sources, source)
-    end
-    table.sort(sources, function(a, b)
-        local an = tostring((a.def and a.def.name) or (a.def and a.def.id) or "")
-        local bn = tostring((b.def and b.def.name) or (b.def and b.def.id) or "")
-        return an:lower() < bn:lower()
-    end)
-
-    for _, source in ipairs(sources) do
         table.insert(item_table, {
             text = source.def.name or source.def.id,
             source = source,
         })
     end
-
-    table.insert(item_table, { text = _("— Quick Actions —") })
-    table.insert(item_table, {
-        text = _("Continue Reading"),
-        callback = function() self:showContinueReading() end,
-    })
-    table.insert(item_table, {
-        text = _("Reading Analytics"),
-        callback = function() self:showAnalytics() end,
-    })
-    table.insert(item_table, {
-        text = _("Offline Library"),
-        callback = function() self:showOfflineLibrary() end,
-    })
-    table.insert(item_table, {
-        text = _("Process download queue"),
-        callback = function() self:processDownloadQueue() end,
-    })
-
     return item_table
 end
 
