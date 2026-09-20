@@ -9,7 +9,7 @@
     "lang":          { "type": "string" },
     "base_url":      { "type": "string", "pattern": "^https://" },
     "version_code":  { "type": "integer", "minimum": 1 },
-    "source_script": { "type": "string", "pattern": "^sources/[a-z]{2,3}/[a-z0-9_]+$", "description": "Required bundled Lua source module implementing this extension's behavior (export contract documented in extensions/format/source-script-format.md). Must match the canonical module for id: sources/<lang>/<name>." },
+    "source_script": { "type": "string", "pattern": "^([a-z][a-z][a-z]?\\/[a-z0-9_]+|[A-Za-z0-9_]+\\.lua)$", "description": "Either a canonical bundled Lua module path (sources/<lang>/<name>, resolved inside the installed plugin via require()) or a bare downloadable filename (e.g. WeebCentral.lua) fetched from the same repo directory as this .tkext.json and executed via loadfile() after being saved to the device's scripts dir. Export contract documented in extensions/format/source-script-format.md." },
     "adapter": { "enum": ["readallcomics", "xoxocomics", "readcomiconline", "batcave"], "description": "Optional legacy bundled KOReader adapter. New sources should implement source_script directly; adapters remain for compatibility while scripts are migrated." },
     "content_warning": { "enum": ["SAFE", "MIXED", "NSFW"] },
     "theme":         { "type": "string", "description": "optional: name of a shared theme this extension is based on, resolved against extensions/themes/<theme>.tkext.json for defaults this file overrides" },

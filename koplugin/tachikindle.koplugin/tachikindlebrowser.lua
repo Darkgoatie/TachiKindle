@@ -358,6 +358,8 @@ function TachiKindleBrowser:openRepo(repo)
     self:switchItemTable(parsed.repo_name or repo.title, item_table)
 end
 
+local Source = require("tachikindlesource")
+
 function TachiKindleBrowser:downloadExtension(repo_url, ext_entry)
     local file_url = repo_url .. "/" .. ext_entry.path
     local body, err = self.plugin:httpGet(file_url)
@@ -382,6 +384,32 @@ function TachiKindleBrowser:downloadExtension(repo_url, ext_entry)
             })
             return false
         end
+    end
+
+    -- A bare "Name.lua" source_script must be fetched from the same repo
+    -- directory as the .tkext.json itself and saved into the shared
+    -- scripts dir before the descriptor is written; a canonical
+    -- "sources/<lang>/<name>" module is bundled in the plugin already
+    -- and needs no download.
+    local script_name = parsed.source_script
+    if type(script_name) == "string" and script_name:match("^[%w_]+%.lua$") then
+        local ext_dir = ext_entry.path:match("^(.*)/[^/]+$") or ""
+        local script_url = repo_url .. "/" .. (ext_dir ~= "" and (ext_dir .. "/") or "") .. script_name
+        local script_body, script_err = self.plugin:httpGet(script_url)
+        if not script_body then
+            UIManager:show(InfoMessage:new{ text = _("Script download failed: ") .. tostring(script_err) })
+            return false
+        end
+        local scripts_dir = Source.scriptsDir()
+        util.makePath(scripts_dir)
+        local script_dest = Source.installedScriptPath(script_name)
+        local sf = io.open(script_dest, "w")
+        if not sf then
+            UIManager:show(InfoMessage:new{ text = _("Could not write script to: ") .. script_dest })
+            return false
+        end
+        sf:write(script_body)
+        sf:close()
     end
 
     local sources_dir = DataStorage:getDataDir() .. "/tachikindle/sources"

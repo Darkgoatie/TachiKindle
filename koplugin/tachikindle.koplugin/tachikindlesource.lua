@@ -36,6 +36,23 @@ local function canonicalSourceScriptForId(source_id)
     return string.format("sources/%s/%s", lang, name)
 end
 
+-- A "downloadable" source_script is a bare filename (e.g. "WeebCentral.lua")
+-- that must have been fetched from the same repo as the .tkext.json and
+-- saved into the installed scripts dir -- as opposed to the legacy
+-- "sources/<lang>/<name>" form, which names a module bundled inside the
+-- plugin's own directory tree and is loaded via require().
+local function isDownloadableScriptName(name)
+    return type(name) == "string" and name:match("^[%w_]+%.lua$") ~= nil
+end
+
+function TachiKindleSource.scriptsDir()
+    return DataStorage:getDataDir() .. "/tachikindle/sources/scripts"
+end
+
+function TachiKindleSource.installedScriptPath(script_name)
+    return TachiKindleSource.scriptsDir() .. "/" .. script_name
+end
+
 -- Load a .tkext.json file from disk into a runnable source object.
 function TachiKindleSource:load(path)
     local f = io.open(path, "r")
@@ -51,13 +68,28 @@ function TachiKindleSource:load(path)
     local source_script
     local canonical_source_script = canonicalSourceScriptForId(def.id)
     if def.source_script then
-        if not canonical_source_script or def.source_script ~= canonical_source_script then
+        if isDownloadableScriptName(def.source_script) then
+            local script_path = TachiKindleSource.installedScriptPath(def.source_script)
+            local chunk, load_err = loadfile(script_path)
+            if not chunk then
+                return nil, "source script unavailable: " .. tostring(load_err)
+            end
+            local ok_run, result = pcall(chunk)
+            if not ok_run then
+                return nil, "source script error: " .. tostring(result)
+            end
+            if type(result) ~= "table" then
+                return nil, "source script must return a table"
+            end
+            source_script = result
+        elseif not canonical_source_script or def.source_script ~= canonical_source_script then
             return nil, "unsupported source_script: " .. tostring(def.source_script)
+        else
+            local loaded, result = pcall(require, def.source_script)
+            if not loaded then return nil, "source script unavailable: " .. tostring(result) end
+            if type(result) ~= "table" then return nil, "source script must return a table" end
+            source_script = result
         end
-        local loaded, result = pcall(require, def.source_script)
-        if not loaded then return nil, "source script unavailable: " .. tostring(result) end
-        if type(result) ~= "table" then return nil, "source script must return a table" end
-        source_script = result
     elseif canonical_source_script then
         local loaded, result = pcall(require, canonical_source_script)
         if loaded and type(result) == "table" then

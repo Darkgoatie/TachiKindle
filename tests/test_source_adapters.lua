@@ -72,6 +72,48 @@ test("dispatch details and chapters with complete URL", function()
     assert(source:fetchMangaDetails("https://example.test/a/b/c").title == "https://example.test/a/b/c")
     assert(source:fetchChapterList("https://example.test/a/b/c")[1].url == "https://example.test/a/b/c/issue")
 end)
+
+test("downloadable bare-filename source_script is loaded via loadfile", function()
+    local scripts_dir = "./tachikindle/sources/scripts"
+    os.execute('mkdir "' .. scripts_dir .. '" 2>/dev/null')
+    local script_path = scripts_dir .. "/Downloadable.lua"
+    local sf = assert(io.open(script_path, "w"))
+    sf:write([[
+        local Source = {}
+        function Source.fetch_manga_list(source, endpoint, page, query)
+            return {{title = "DownloadedScriptResult"}}, nil, false
+        end
+        return Source
+    ]])
+    sf:close()
+
+    definition = {
+        id = "en.readallcomics",
+        source_script = "Downloadable.lua",
+        base_url = "https://example.test",
+        endpoints = {page_list = {method = "GET", path = "{chapter_url}"}},
+    }
+    local source = assert(Source:load(path))
+    local list, err = source:fetchMangaList("popular", 1, "")
+    assert(list[1].title == "DownloadedScriptResult" and not err)
+
+    os.remove(script_path)
+end)
+
+test("downloadable source_script with syntax error fails loudly", function()
+    local scripts_dir = "./tachikindle/sources/scripts"
+    os.execute('mkdir "' .. scripts_dir .. '" 2>/dev/null')
+    local script_path = scripts_dir .. "/Broken.lua"
+    local sf = assert(io.open(script_path, "w"))
+    sf:write("this is not valid lua (((")
+    sf:close()
+
+    definition = { id = "en.readallcomics", source_script = "Broken.lua" }
+    local source, err = Source:load(path)
+    assert(source == nil and err:match("source script unavailable"))
+
+    os.remove(script_path)
+end)
 test("parse adapter pages and preserve cache writes", function()
     local source = load()
     source.savePageListCache = function(_, _, pages) cached = pages end
