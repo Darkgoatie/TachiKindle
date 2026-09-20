@@ -107,16 +107,10 @@ function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title, o
         return _orig_closeWidget(self, ...)
     end
 
-    local _orig_onTap = viewer.onTap
-    function viewer:onTap(arg, ges)
-        local handled = _orig_onTap(self, arg, ges)
-        -- ImageViewer toggles buttons on middle-tap; keep title bar in sync
-        -- so the chapter bar opens/closes with that same click.
-        if self.with_title_bar ~= self.buttons_visible then
-            self.with_title_bar = self.buttons_visible
-            self:update()
-        end
-        return handled
+    -- Disable tap-to-open viewer controls (rotate/close menu) to avoid
+    -- accidental popups while reading. Swipes still change pages.
+    function viewer:onTap(_arg, _ges)
+        return true
     end
 
     UIManager:show(viewer)
