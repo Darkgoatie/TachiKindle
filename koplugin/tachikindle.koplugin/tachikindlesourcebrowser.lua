@@ -432,15 +432,31 @@ function TachiKindleSourceBrowser:queueFilteredRange(source, chapters, count, pr
 end
 
 function TachiKindleSourceBrowser:processDownloadQueue()
-    local done, failed, remaining = 0, 0, 0
-    for _, source in pairs(self:loadAllSources()) do
-        local r = source:processQueue(5)
-        done = done + (r.done or 0)
-        failed = failed + (r.failed or 0)
-        remaining = remaining + (r.remaining or 0)
+    local MAX_QUEUE_BATCH = 5
+    local done, failed = 0, 0
+    local budget = MAX_QUEUE_BATCH
+    local sources = self:loadAllSources()
+
+    for _, source in pairs(sources) do
+        if budget > 0 then
+            local r = source:processQueue(budget)
+            done = done + (r.done or 0)
+            failed = failed + (r.failed or 0)
+            budget = math.max(0, budget - (r.done or 0))
+        end
     end
+
+    local remaining = 0
+    for _, source in pairs(sources) do
+        for _, job in ipairs(source:loadQueue()) do
+            if job.source_id == source.def.id then
+                remaining = remaining + 1
+            end
+        end
+    end
+
     UIManager:show(InfoMessage:new{
-        text = string.format("Queue: done=%d failed=%d remaining=%d", done, failed, remaining),
+        text = string.format("Queue (max %d/run): done=%d failed=%d remaining=%d", MAX_QUEUE_BATCH, done, failed, remaining),
         timeout = 2,
     })
     if self.screen == SCREEN_OFFLINE then
