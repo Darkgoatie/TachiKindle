@@ -34,6 +34,7 @@ local SCREEN_MANGA_LIST = "manga_list"
 local SCREEN_CHAPTER_LIST = "chapter_list"
 local SCREEN_FAVORITES = "favorites"
 local SCREEN_OFFLINE = "offline"
+local SCREEN_OFFLINE_SERIES = "offline_series"
 local SCREEN_DOWNLOAD_QUEUE = "download_queue"
 local SCREEN_CONTINUE = "continue"
 local SCREEN_ANALYTICS = "analytics"
@@ -44,6 +45,8 @@ function TachiKindleSourceBrowser:init()
         self.item_table = self:genFavoritesItemTable()
     elseif self.screen == SCREEN_OFFLINE then
         self.item_table = self:genOfflineItemTable()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self.item_table = self:genOfflineSeriesItemTable()
     elseif self.screen == SCREEN_DOWNLOAD_QUEUE then
         self.item_table = self:genDownloadQueueItemTable()
     elseif self.screen == SCREEN_CONTINUE then
@@ -238,6 +241,92 @@ local function fmtMB(bytes)
     return string.format("%.1fMB", bytes / (1024 * 1024))
 end
 
+local function extractChapterNumber(title)
+    local s = tostring(title or "")
+    local n = s:match("[Cc][Hh][Aa]?[Pp]?[Tt]?[Ee]?[Rr]?%s*([%d]+%.?[%d]*)")
+    if not n then
+        n = s:match("([%d]+%.?[%d]*)")
+    end
+    return n and tonumber(n) or nil
+end
+
+local function fmtChapterNum(n)
+    n = tonumber(n)
+    if not n then return nil end
+    if math.floor(n) == n then return tostring(math.floor(n)) end
+    return tostring(n)
+end
+
+function TachiKindleSourceBrowser:collectOfflineSeries()
+    local groups = {}
+    local total_bytes = 0
+
+    for _, source in pairs(self:loadAllSources()) do
+        for _, ch in ipairs(source:listCachedChapters()) do
+            total_bytes = total_bytes + (ch.size_bytes or 0)
+            local manga_title = ch.manga_title or "Manga"
+            local key = tostring(source.def.id) .. "|" .. tostring(manga_title)
+            if not groups[key] then
+                groups[key] = {
+                    key = key,
+                    source = source,
+                    source_id = source.def.id,
+                    source_name = source.def.name or source.def.id,
+                    manga_title = manga_title,
+                    entries = {},
+                    total_bytes = 0,
+                    min_ch = nil,
+                    max_ch = nil,
+                }
+            end
+
+            local g = groups[key]
+            g.total_bytes = g.total_bytes + (ch.size_bytes or 0)
+            table.insert(g.entries, ch)
+
+            local num = extractChapterNumber(ch.chapter_title or ch.chapter_url)
+            if num then
+                g.min_ch = g.min_ch and math.min(g.min_ch, num) or num
+                g.max_ch = g.max_ch and math.max(g.max_ch, num) or num
+            end
+        end
+    end
+
+    local series = {}
+    for _, g in pairs(groups) do
+        table.sort(g.entries, function(a, b)
+            local na = extractChapterNumber(a.chapter_title or a.chapter_url)
+            local nb = extractChapterNumber(b.chapter_title or b.chapter_url)
+            if na and nb and na ~= nb then return na < nb end
+            return tostring(a.chapter_title or a.chapter_url) < tostring(b.chapter_title or b.chapter_url)
+        end)
+        table.insert(series, g)
+    end
+
+    table.sort(series, function(a, b)
+        if a.manga_title == b.manga_title then
+            return tostring(a.source_name) < tostring(b.source_name)
+        end
+        return tostring(a.manga_title) < tostring(b.manga_title)
+    end)
+
+    return series, total_bytes
+end
+
+function TachiKindleSourceBrowser:offlineSeriesLabel(series)
+    local range
+    if series.min_ch and series.max_ch then
+        if series.min_ch == series.max_ch then
+            range = fmtChapterNum(series.min_ch)
+        else
+            range = string.format("%s-%s", fmtChapterNum(series.min_ch), fmtChapterNum(series.max_ch))
+        end
+    else
+        range = tostring(#series.entries) .. " ch"
+    end
+    return string.format("%s [%s] %s", series.manga_title or "Manga", series.source_name or series.source_id or "source", range)
+end
+
 function TachiKindleSourceBrowser:genOfflineItemTable()
     local items = {
         {
@@ -258,31 +347,64 @@ function TachiKindleSourceBrowser:genOfflineItemTable()
         },
     }
     local static_rows = #items
-    local sources = self:loadAllSources()
-    local total_bytes = 0
-    for _, source in pairs(sources) do
-        local cached = source:listCachedChapters()
-        for _, ch in ipairs(cached) do
-            total_bytes = total_bytes + (ch.size_bytes or 0)
-            table.insert(items, {
-                text = string.format("[%s] %s / %s  (%s)", ch.complete and "Complete" or "Partial", ch.manga_title or "Manga", ch.chapter_title or ch.chapter_url, fmtMB(ch.size_bytes)),
-                source = source,
-                chapter = { title = ch.chapter_title, url = ch.chapter_url },
-                offline_entry = ch,
-            })
-        end
-    end
-    if #items == static_rows then
+    local series, total_bytes = self:collectOfflineSeries()
+
+    if #series == 0 then
         table.insert(items, { text = _("No offline chapters yet.") })
     else
         table.insert(items, static_rows + 1, { text = _("Total cache: ") .. fmtMB(total_bytes) })
+        for _, s in ipairs(series) do
+            table.insert(items, {
+                text = self:offlineSeriesLabel(s),
+                offline_series = s,
+            })
+        end
+    end
+    return items
+end
+
+function TachiKindleSourceBrowser:genOfflineSeriesItemTable()
+    local series = self.current_offline_series
+    local items = {
+        {
+            text = _("← Back to Offline Library"),
+            callback = function() self:showOfflineLibrary() end,
+        },
+    }
+
+    if not series then
+        table.insert(items, { text = _("No series selected.") })
+        return items
+    end
+
+    table.insert(items, { text = self:offlineSeriesLabel(series) .. "  (" .. fmtMB(series.total_bytes) .. ")" })
+
+    for _, ch in ipairs(series.entries or {}) do
+        table.insert(items, {
+            text = string.format("[%s] %s  (%s)", ch.complete and "Complete" or "Partial", ch.chapter_title or ch.chapter_url, fmtMB(ch.size_bytes)),
+            source = series.source,
+            chapter = { title = ch.chapter_title, url = ch.chapter_url },
+            offline_entry = ch,
+        })
+    end
+
+    if #items == 2 then
+        table.insert(items, { text = _("No offline chapters in this series.") })
     end
     return items
 end
 
 function TachiKindleSourceBrowser:showOfflineLibrary()
     self.screen = SCREEN_OFFLINE
+    self.current_offline_series = nil
     self:switchItemTable(_("Offline Library"), self:genOfflineItemTable())
+    UIManager:setDirty(self, "full")
+end
+
+function TachiKindleSourceBrowser:showOfflineSeries(series)
+    self.screen = SCREEN_OFFLINE_SERIES
+    self.current_offline_series = series
+    self:switchItemTable(series and (series.manga_title or _("Offline Series")) or _("Offline Series"), self:genOfflineSeriesItemTable())
     UIManager:setDirty(self, "full")
 end
 
@@ -345,6 +467,8 @@ function TachiKindleSourceBrowser:cleanFailedCaches()
     UIManager:show(InfoMessage:new{ text = _("Removed failed caches: ") .. tostring(removed), timeout = 2 })
     if self.screen == SCREEN_OFFLINE then
         self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
     end
 end
 
@@ -404,7 +528,11 @@ function TachiKindleSourceBrowser:importOfflineManifest()
         end
     end
     UIManager:show(InfoMessage:new{ text = _("Manifest imported entries: ") .. tostring(imported), timeout = 2 })
-    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
+    end
 end
 
 local function isChapterRead(source, chapter)
@@ -539,6 +667,8 @@ function TachiKindleSourceBrowser:processDownloadQueue(max_total, silent)
 
     if self.screen == SCREEN_OFFLINE then
         self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
     elseif self.screen == SCREEN_DOWNLOAD_QUEUE then
         self:showDownloadQueue()
     end
@@ -555,6 +685,8 @@ function TachiKindleSourceBrowser:clearQueue()
         self:showDownloadQueue()
     elseif self.screen == SCREEN_OFFLINE then
         self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
     end
 end
 
@@ -607,8 +739,17 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         self:openChapter(item.source, item.chapter)
         return true
     end
+    if self.screen == SCREEN_OFFLINE and item.offline_series then
+        self:showOfflineSeries(item.offline_series)
+        return true
+    end
     if self.screen == SCREEN_OFFLINE and item.chapter and item.source then
         self.refresh_current_list = function() self:showOfflineLibrary() end
+        self:openChapter(item.source, item.chapter)
+        return true
+    end
+    if self.screen == SCREEN_OFFLINE_SERIES and item.chapter and item.source then
+        self.refresh_current_list = function() self:showOfflineSeries(self.current_offline_series) end
         self:openChapter(item.source, item.chapter)
         return true
     end
@@ -654,7 +795,7 @@ function TachiKindleSourceBrowser:onMenuHold(item)
         self:showSourceActions(item)
         return true
     end
-    if (self.screen == SCREEN_CHAPTER_LIST or self.screen == SCREEN_OFFLINE) and item.chapter and item.source then
+    if (self.screen == SCREEN_CHAPTER_LIST or self.screen == SCREEN_OFFLINE or self.screen == SCREEN_OFFLINE_SERIES) and item.chapter and item.source then
         self:showChapterActions(item)
         return true
     end
@@ -763,13 +904,21 @@ function TachiKindleSourceBrowser:verifyOfflineChapter(source, chapter)
         text = string.format("Cache verify: %d/%d saved", s.saved or 0, s.total or 0),
         timeout = 2,
     })
-    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
+    end
 end
 
 function TachiKindleSourceBrowser:deleteOfflineChapter(source, chapter)
     source:deleteChapterCache(chapter.url)
     UIManager:show(InfoMessage:new{ text = _("Offline cache deleted"), timeout = 1 })
-    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
+    end
 end
 
 function TachiKindleSourceBrowser:downloadChapterForOffline(source, chapter, force)
@@ -798,7 +947,11 @@ function TachiKindleSourceBrowser:downloadChapterForOffline(source, chapter, for
             .. (result.failed > 0 and (_(" (failed: ") .. tostring(result.failed) .. ")") or ""),
         timeout = 2,
     })
-    if self.screen == SCREEN_OFFLINE then self:showOfflineLibrary() end
+    if self.screen == SCREEN_OFFLINE then
+        self:showOfflineLibrary()
+    elseif self.screen == SCREEN_OFFLINE_SERIES then
+        self:showOfflineSeries(self.current_offline_series)
+    end
 end
 
 function TachiKindleSourceBrowser:getNextChapter(source, chapter)
