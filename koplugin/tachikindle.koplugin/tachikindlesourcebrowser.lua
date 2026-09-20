@@ -17,6 +17,7 @@ local UIManager = require("ui/uimanager")
 local TachiKindleSource = require("tachikindlesource")
 local TachiKindleReader = require("tachikindlereader")
 local TachiKindleFavorites = require("tachikindlefavorites")
+local TachiKindleProgress = require("tachikindleprogress")
 local lfs = require("libs/libkoreader-lfs")
 local _ = require("gettext")
 
@@ -33,6 +34,8 @@ local SCREEN_MANGA_LIST = "manga_list"
 local SCREEN_CHAPTER_LIST = "chapter_list"
 local SCREEN_FAVORITES = "favorites"
 local SCREEN_OFFLINE = "offline"
+local SCREEN_CONTINUE = "continue"
+local SCREEN_ANALYTICS = "analytics"
 
 function TachiKindleSourceBrowser:init()
     self.screen = self.start_screen or SCREEN_SOURCE_LIST
@@ -40,6 +43,10 @@ function TachiKindleSourceBrowser:init()
         self.item_table = self:genFavoritesItemTable()
     elseif self.screen == SCREEN_OFFLINE then
         self.item_table = self:genOfflineItemTable()
+    elseif self.screen == SCREEN_CONTINUE then
+        self.item_table = self:genContinueItemTable()
+    elseif self.screen == SCREEN_ANALYTICS then
+        self.item_table = self:genAnalyticsItemTable()
     else
         self.item_table = self:genSourceItemTable()
     end
@@ -75,6 +82,14 @@ end
 
 function TachiKindleSourceBrowser:genSourceItemTable()
     local item_table = {
+        {
+            text = _("Continue Reading"),
+            callback = function() self:showContinueReading() end,
+        },
+        {
+            text = _("Reading Analytics"),
+            callback = function() self:showAnalytics() end,
+        },
         {
             text = _("Offline Library"),
             callback = function() self:showOfflineLibrary() end,
@@ -127,6 +142,67 @@ function TachiKindleSourceBrowser:genFavoritesItemTable()
         })
     end
     return item_table
+end
+
+
+function TachiKindleSourceBrowser:genContinueItemTable()
+    local items = {
+        {
+            text = _("← Back to Sources"),
+            callback = function()
+                self.screen = SCREEN_SOURCE_LIST
+                self:switchItemTable(_("Sources"), self:genSourceItemTable())
+                UIManager:setDirty(self, "full")
+            end,
+        },
+    }
+    local sources = self:loadAllSources()
+    for _, rec in ipairs(TachiKindleProgress:listContinue(100)) do
+        local source = sources[rec.source_id]
+        local progress = (tonumber(rec.last_page) or 0) .. "/" .. (tonumber(rec.total_pages) or 0)
+        table.insert(items, {
+            text = string.format("▶ %s / %s  (%s)", rec.manga_title or "Manga", rec.chapter_title or rec.chapter_url, progress),
+            source = source,
+            chapter = { title = rec.chapter_title or rec.chapter_url, url = rec.chapter_url },
+            manga = { title = rec.manga_title, url = rec.manga_url },
+            missing_source = source == nil,
+        })
+    end
+    if #items == 1 then
+        table.insert(items, { text = _("No in-progress chapters yet.") })
+    end
+    return items
+end
+
+function TachiKindleSourceBrowser:showContinueReading()
+    self.screen = SCREEN_CONTINUE
+    self:switchItemTable(_("Continue Reading"), self:genContinueItemTable())
+    UIManager:setDirty(self, "full")
+end
+
+function TachiKindleSourceBrowser:genAnalyticsItemTable()
+    local a = TachiKindleProgress:getAnalytics()
+    return {
+        {
+            text = _("← Back to Sources"),
+            callback = function()
+                self.screen = SCREEN_SOURCE_LIST
+                self:switchItemTable(_("Sources"), self:genSourceItemTable())
+                UIManager:setDirty(self, "full")
+            end,
+        },
+        { text = _("Tracked chapters: ") .. tostring(a.chapters_tracked) },
+        { text = _("Read chapters: ") .. tostring(a.chapters_read) },
+        { text = _("In progress: ") .. tostring(a.chapters_in_progress) },
+        { text = _("Pages read: ") .. tostring(a.pages_read) },
+        { text = _("Reading sessions: ") .. tostring(a.sessions) },
+    }
+end
+
+function TachiKindleSourceBrowser:showAnalytics()
+    self.screen = SCREEN_ANALYTICS
+    self:switchItemTable(_("Reading Analytics"), self:genAnalyticsItemTable())
+    UIManager:setDirty(self, "full")
 end
 
 local function fmtMB(bytes)
@@ -340,6 +416,20 @@ function TachiKindleSourceBrowser:onMenuSelect(item)
         self:openSource(item.source)
         return true
     end
+    if self.screen == SCREEN_CONTINUE and item.manga then
+        if item.missing_source then
+            UIManager:show(InfoMessage:new{
+                text = _("Source for this chapter is no longer installed."),
+            })
+            return true
+        end
+        self.current_manga = item.manga
+        self.refresh_current_list = function()
+            self:showContinueReading()
+        end
+        self:openChapter(item.source, item.chapter)
+        return true
+    end
     if self.screen == SCREEN_FAVORITES and item.manga then
         -- Favorites load chapters directly, skipping the manga-list
         -- step entirely (per the feature request: tapping a favorite
@@ -393,6 +483,8 @@ function TachiKindleSourceBrowser:showChapterActions(item)
             {{ text = _("Queue high"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 1) end, align = "left" }},
             {{ text = _("Queue normal"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 5) end, align = "left" }},
             {{ text = _("Queue low"), callback = function() UIManager:close(dialog); self:queueChapter(source, chapter, 9) end, align = "left" }},
+            {{ text = _("Mark as read"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, true) end, align = "left" }},
+            {{ text = _("Mark as unread"), callback = function() UIManager:close(dialog); self:markChapterRead(source, chapter, false) end, align = "left" }},
             {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end, align = "left" }},
         },
     }
@@ -436,6 +528,17 @@ function TachiKindleSourceBrowser:removeInstalledSource(source)
     self.screen = SCREEN_SOURCE_LIST
     self:switchItemTable(_("Sources"), self:genSourceItemTable())
     UIManager:setDirty(self, "full")
+end
+
+function TachiKindleSourceBrowser:markChapterRead(source, chapter, is_read)
+    TachiKindleProgress:markRead(source.def.id, source.def.name, self.current_manga, chapter, is_read)
+    UIManager:show(InfoMessage:new{
+        text = is_read and _("Marked as read") or _("Marked as unread"),
+        timeout = 1,
+    })
+    if self.refresh_current_list then
+        self.refresh_current_list()
+    end
 end
 
 function TachiKindleSourceBrowser:queueChapter(source, chapter, priority)
@@ -667,10 +770,32 @@ function TachiKindleSourceBrowser:openManga(source, manga)
             text = _("Queue all chapters"),
             callback = function() self:queueChapterRange(source, chapters, #chapters, 5) end,
         },
+        {
+            text = _("Continue latest in-progress"),
+            callback = function()
+                for _, c in ipairs(chapters) do
+                    local pr = TachiKindleProgress:getChapterProgress(source.def.id, c.url)
+                    if pr and not pr.is_read and (tonumber(pr.last_page) or 0) > 0 then
+                        self:openChapter(source, c)
+                        return
+                    end
+                end
+                UIManager:show(InfoMessage:new{ text = _("No in-progress chapters in this manga."), timeout = 1 })
+            end,
+        },
     }
     for _, c in ipairs(chapters) do
+        local progress = TachiKindleProgress:getChapterProgress(source.def.id, c.url)
+        local prefix = ""
+        if progress then
+            if progress.is_read then
+                prefix = "✓ "
+            elseif (tonumber(progress.last_page) or 0) > 0 then
+                prefix = string.format("• %d/%d ", tonumber(progress.last_page) or 0, tonumber(progress.total_pages) or 0)
+            end
+        end
         table.insert(item_table, {
-            text = c.date and (c.title .. "  (" .. c.date .. ")") or c.title,
+            text = prefix .. (c.date and (c.title .. "  (" .. c.date .. ")") or c.title),
             source = source,
             chapter = c,
         })
@@ -701,7 +826,17 @@ function TachiKindleSourceBrowser:openChapter(source, chapter)
         UIManager:show(InfoMessage:new{ text = _("Newer online version available"), timeout = 2 })
     end
 
-    TachiKindleReader.show(source, chapter.url, pages, chapter.title)
+    local chapter_manga = self.current_manga or { title = nil, url = nil }
+    local progress = TachiKindleProgress:getChapterProgress(source.def.id, chapter.url)
+    local start_page = progress and (tonumber(progress.last_page) or 1) or 1
+    TachiKindleProgress:recordChapterOpen(source.def.id, source.def.name, chapter_manga, chapter, #pages)
+
+    TachiKindleReader.show(source, chapter.url, pages, chapter.title, {
+        start_page = start_page,
+        on_progress = function(page, total, _closing)
+            TachiKindleProgress:updateProgress(source.def.id, source.def.name, chapter_manga, chapter, page, total)
+        end,
+    })
 end
 
 return TachiKindleSourceBrowser

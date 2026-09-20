@@ -82,6 +82,18 @@ function TachiKindle:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = _("Continue Reading"),
+                callback = function()
+                    self:showContinueReading()
+                end,
+            },
+            {
+                text = _("Reading Analytics"),
+                callback = function()
+                    self:showReadingAnalytics()
+                end,
+            },
+            {
                 text = _("Favorites"),
                 callback = function()
                     self:showFavorites()
@@ -132,6 +144,38 @@ function TachiKindle:showFavorites()
         end,
     }
     UIManager:show(self.favorites_browser)
+end
+
+function TachiKindle:showContinueReading()
+    self:loadSettings()
+    self.continue_browser = TachiKindleSourceBrowser:new{
+        title = _("Continue Reading"),
+        start_screen = "continue",
+        is_popout = false,
+        is_borderless = true,
+        title_bar_fm_style = true,
+        close_callback = function()
+            UIManager:close(self.continue_browser)
+            self.continue_browser = nil
+        end,
+    }
+    UIManager:show(self.continue_browser)
+end
+
+function TachiKindle:showReadingAnalytics()
+    self:loadSettings()
+    self.analytics_browser = TachiKindleSourceBrowser:new{
+        title = _("Reading Analytics"),
+        start_screen = "analytics",
+        is_popout = false,
+        is_borderless = true,
+        title_bar_fm_style = true,
+        close_callback = function()
+            UIManager:close(self.analytics_browser)
+            self.analytics_browser = nil
+        end,
+    }
+    UIManager:show(self.analytics_browser)
 end
 
 function TachiKindle:showOfflineLibrary()

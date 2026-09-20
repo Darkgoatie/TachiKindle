@@ -40,7 +40,8 @@ end
 -- source: a loaded TachiKindleSource instance
 -- chapter_url: canonical chapter URL used as cache key
 -- page_urls: string array of page image URLs (from fetchPageList)
-function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title)
+function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title, options)
+    options = options or {}
     if #page_urls == 0 then
         UIManager:show(InfoMessage:new{ text = _("This chapter has no pages.") })
         return
@@ -83,6 +84,29 @@ function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title)
         title_text = chapter_title or "",
     }
 
+    local total_pages = #page_urls
+    local current_page = math.max(1, math.min(tonumber(options.start_page) or 1, total_pages))
+    local function notify(closing)
+        if type(options.on_progress) == "function" then
+            options.on_progress(current_page, total_pages, closing and true or false)
+        end
+    end
+    notify(false)
+
+    local _orig_switchToImageNum = viewer.switchToImageNum
+    function viewer:switchToImageNum(num)
+        local result = _orig_switchToImageNum(self, num)
+        current_page = math.max(1, math.min(tonumber(self.current_image) or tonumber(num) or 1, total_pages))
+        notify(false)
+        return result
+    end
+
+    local _orig_closeWidget = viewer.closeWidget
+    function viewer:closeWidget(...)
+        notify(true)
+        return _orig_closeWidget(self, ...)
+    end
+
     local _orig_onTap = viewer.onTap
     function viewer:onTap(arg, ges)
         local handled = _orig_onTap(self, arg, ges)
@@ -96,6 +120,9 @@ function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title)
     end
 
     UIManager:show(viewer)
+    if current_page > 1 then
+        viewer:switchToImageNum(current_page)
+    end
 end
 
 return TachiKindleReader
