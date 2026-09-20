@@ -107,9 +107,31 @@ function TachiKindleReader.show(source, chapter_url, page_urls, chapter_title, o
         return _orig_closeWidget(self, ...)
     end
 
-    -- Disable tap-to-open viewer controls (rotate/close menu) to avoid
-    -- accidental popups while reading.
-    function viewer:onTap(_arg, _ges)
+    local _orig_onTap = viewer.onTap
+    -- Keep accidental popups down, but allow intentional exit:
+    -- - tap top strip => toggle viewer controls/top bar
+    -- - tap top-left corner => close reader immediately
+    -- - any other tap => ignored
+    function viewer:onTap(arg, ges)
+        local w = tonumber(self.dimen and self.dimen.w) or 0
+        local h = tonumber(self.dimen and self.dimen.h) or 0
+        local x = tonumber(ges and ((ges.pos and ges.pos.x) or ges.x))
+        local y = tonumber(ges and ((ges.pos and ges.pos.y) or ges.y))
+
+        local top_strip = x and y and h > 0 and y <= math.max(80, math.floor(h * 0.12))
+        local top_left_close = x and y and w > 0 and h > 0
+            and x <= math.max(90, math.floor(w * 0.15))
+            and y <= math.max(90, math.floor(h * 0.15))
+
+        if top_left_close then
+            self:closeWidget()
+            return true
+        end
+
+        if top_strip and type(_orig_onTap) == "function" then
+            return _orig_onTap(self, arg, ges)
+        end
+
         return true
     end
 
