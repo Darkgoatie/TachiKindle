@@ -226,12 +226,54 @@ function TachiKindleBrowser:addRepo()
     input_dialog:onShowKeyboard()
 end
 
+function TachiKindleBrowser:sourcesDir()
+    return DataStorage:getDataDir() .. "/tachikindle/sources"
+end
+
 function TachiKindleBrowser:installedSourcePath(ext_id)
-    return DataStorage:getDataDir() .. "/tachikindle/sources/" .. tostring(ext_id) .. ".tkext.json"
+    return self:sourcesDir() .. "/" .. tostring(ext_id) .. ".tkext.json"
+end
+
+-- Backward compatibility: older installs were saved without lang prefix
+-- in filename (e.g. weebcentral.tkext.json while id is en.weebcentral).
+function TachiKindleBrowser:resolveInstalledSourcePath(ext_id)
+    local candidates = { self:installedSourcePath(ext_id) }
+    local short_id = tostring(ext_id):match("^[^.]+%.(.+)$")
+    if short_id then
+        table.insert(candidates, self:installedSourcePath(short_id))
+    end
+
+    for _, p in ipairs(candidates) do
+        local f = io.open(p, "r")
+        if f then
+            f:close()
+            return p
+        end
+    end
+
+    local sources_dir = self:sourcesDir()
+    if lfs.attributes(sources_dir, "mode") == "directory" then
+        for name in lfs.dir(sources_dir) do
+            if name ~= "." and name ~= ".." and name:match("%.tkext%.json$") then
+                local path = sources_dir .. "/" .. name
+                local f = io.open(path, "r")
+                if f then
+                    local body = f:read("*a")
+                    f:close()
+                    local ok, parsed = pcall(JSON.decode, body)
+                    if ok and type(parsed) == "table" and parsed.id == ext_id then
+                        return path
+                    end
+                end
+            end
+        end
+    end
+
+    return candidates[1]
 end
 
 function TachiKindleBrowser:installedSourceMetadata(ext_id)
-    local f = io.open(self:installedSourcePath(ext_id), "r")
+    local f = io.open(self:resolveInstalledSourcePath(ext_id), "r")
     if not f then return nil end
     local body = f:read("*a")
     f:close()
@@ -273,7 +315,8 @@ function TachiKindleBrowser:listInstalledExtensions()
 end
 
 function TachiKindleBrowser:removeInstalledExtension(ext_entry)
-    local ok, err = os.remove(self:installedSourcePath(ext_entry.id))
+    local path = self:resolveInstalledSourcePath(ext_entry.id)
+    local ok, err = os.remove(path)
     if not ok then
         UIManager:show(InfoMessage:new{ text = _("Remove failed: ") .. tostring(err), timeout = 2 })
         return false
