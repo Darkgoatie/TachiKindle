@@ -60,7 +60,7 @@ local HEADERS = {
 local function httpGet(source, path, params)
     local qs = {}
     for _, kv in ipairs(params or {}) do
-        table.insert(qs, kv[1] .. "=" .. socket_url.escape(kv[2]))
+        table.insert(qs, socket_url.escape(kv[1]) .. "=" .. socket_url.escape(kv[2]))
     end
     local url = API_BASE .. path
     if #qs > 0 then

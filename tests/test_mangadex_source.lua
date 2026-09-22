@@ -143,7 +143,7 @@ test("fetch_manga_list: popular returns real-shaped list with cover and has_next
     local list, err, has_next = source:fetchMangaList("popular", 1, "")
     assert(list, err)
     assert(seen_url:match("^https://api%.mangadex%.org/manga%?"))
-    assert(seen_url:match("order%[followedCount%]=desc"))
+    assert(seen_url:match("order%%5bfollowedCount%%5d=desc"))
     assert(#list == 1)
     assert(list[1].title == "Grand Blue Dreaming")
     assert(list[1].url == "https://api.mangadex.org/title/fffbfac3-b7ad-41ee-9581-b4d90ecec941")
@@ -167,7 +167,7 @@ end)
 test("fetch_manga_details: real fields including author, genres, description", function()
     local source = load()
     source.fetch = function(_, url)
-        assert(url == "https://api.mangadex.org/manga/fffbfac3-b7ad-41ee-9581-b4d90ecec941?includes[]=cover_art&includes[]=author&includes[]=artist")
+        assert(url == "https://api.mangadex.org/manga/fffbfac3-b7ad-41ee-9581-b4d90ecec941?includes%5b%5d=cover_art&includes%5b%5d=author&includes%5b%5d=artist")
         return MANGA_DETAILS_JSON
     end
     local details, err = source:fetchMangaDetails("https://api.mangadex.org/title/fffbfac3-b7ad-41ee-9581-b4d90ecec941")
@@ -189,7 +189,7 @@ test("fetch_chapter_list: real feed shape, filters unavailable/external chapters
     local source = load()
     source.fetch = function(_, url)
         assert(url:match("^https://api%.mangadex%.org/manga/fffbfac3%-b7ad%-41ee%-9581%-b4d90ecec941/feed%?"))
-        assert(url:match("translatedLanguage%[%]=en"))
+        assert(url:match("translatedLanguage%%5b%%5d=en"))
         return FEED_JSON
     end
     local chapters, err = source:fetchChapterList("https://api.mangadex.org/title/fffbfac3-b7ad-41ee-9581-b4d90ecec941")
