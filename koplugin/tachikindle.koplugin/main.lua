@@ -21,6 +21,7 @@ local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local TachiKindleBrowser = require("tachikindlebrowser")
 local TachiKindleSourceBrowser = require("tachikindlesourcebrowser")
+local TachiKindleUpdater = require("tachikindleupdater")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local http = require("socket.http")
@@ -136,8 +137,27 @@ function TachiKindle:addToMainMenu(menu_items)
                     self:showRepoList()
                 end,
             },
+            {
+                text = _("Check for updates"),
+                callback = function()
+                    self:checkForUpdates()
+                end,
+            },
         },
     }
+end
+
+-- Self-update check for the plugin's OWN code (main.lua and friends
+-- under koplugin/tachikindle.koplugin/), fetched from the real
+-- Darkgoatie/TachiKindle GitHub repo. Distinct from and unrelated to
+-- showRepoList()'s Extensions Manager above, which manages downloadable
+-- manga *sources* from the separate tachikindle-sources catalog repo.
+-- See tachikindleupdater.lua for the full design rationale. This is
+-- always user-initiated (menu tap) and never runs automatically; the
+-- updater itself also requires a second explicit confirmation tap
+-- ("Update now") before writing any files.
+function TachiKindle:checkForUpdates()
+    TachiKindleUpdater:checkForUpdates(self)
 end
 
 function TachiKindle:showSourceList()

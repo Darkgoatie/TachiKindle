@@ -37,6 +37,7 @@ tests=(
   "tests/test_comic_source_loading.lua"
   "tests/test_selector_extensions_smoke.lua"
   "tests/test_mangadex_source.lua"
+  "tests/test_updater.lua"
   "tests/test_weebcentral_chapter_fallback.lua"
   "tests/test_readallcomics.lua"
   "tests/test_readcomiconline_adapter.lua"
