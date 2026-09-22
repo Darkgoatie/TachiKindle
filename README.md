@@ -1,199 +1,150 @@
 # TachiKindle
 
-A Tachiyomi-style manga/comic reader for jailbroken Kindles. Runs as a
-native ARM binary launched by a Scriptlet — no KUAL, no Java.
+A Tachiyomi-style manga/comic reader plugin for KOReader, built for
+jailbroken Kindles. Runs as a real KOReader plugin (`.koplugin`) --
+no separate binary, no KUAL, no Java. Reads offline CBZ libraries and
+downloads chapters directly from online manga sources.
+
+## Features
+
+- Offline library: browse/read `.cbz` files or folders of loose images
+  under your KOReader library folders, same as any other book.
+- Online sources: an in-app Extensions Manager downloads source
+  definitions from a public catalog and lets you browse, search, and
+  download chapters from real manga/comic sites straight to your
+  device.
+- Self-update: check for and apply plugin updates from GitHub directly
+  on-device, no USB/computer required.
+- Reading progress, favorites, and per-series metadata persist across
+  sessions.
 
 ## Supported devices
 
-Built and verified against:
+Runs on any device KOReader itself supports. Verified on:
 
-- Kindle Paperwhite (11th gen), board `malbec_bellatrix`
-- Firmware 5.19.2 (kernel 4.9.77-lab126, armv7l, `kindlehf` ABI)
-- Jailbroken via SpringBreak v1.3.7 (KindleModding `hdnext` stack)
-- Screen: 1236x1648 @ 298.99dpi, 8bpp grayscale
+- Kindle Paperwhite (11th gen), jailbroken via SpringBreak (KindleModding
+  `hdnext` stack), KOReader running as the primary reader app.
 
-Other `kindlehf`-class devices (FW >= 5.16.3, hard-float) should work
-with the same build but have not been tested. Older devices need the
-`kindlepw2` or `kindle5` toolchain instead — see the plan document for
-the toolchain-selection table.
+Any jailbroken Kindle capable of running KOReader should work the same
+way; other KOReader-supported e-readers (Kobo, generic Linux, etc.)
+should also work in principle but have not been tested by this project.
 
 ## Installing on your Kindle
 
-1. Jailbreak your device (SpringBreak or another `hdnext`-stack jailbreak
-   from [kindlemodding.org](https://kindlemodding.org)).
-2. Download the latest release zip (or build it yourself, see below).
-3. Connect the Kindle via USB.
-4. Copy `tachikindle/` to the Kindle's root as `/mnt/us/tachikindle/`.
-5. Copy `TachiKindle.sh` to `/mnt/us/documents/TachiKindle.sh`.
-6. Eject, wait for the library to refresh, tap "TachiKindle" (it appears
-   as a book, since that's how Scriptlets work on this jailbreak stack).
-7. Put your comics under `/mnt/us/tachikindle/library/<Series Name>/`,
-   either as `.cbz` files (one per chapter) or subfolders of loose
-   images. Relaunch the app or use "Rescan Library" (once wired up --
-   see Known Issues) to pick up new content.
+1. Jailbreak your device and install KOReader (see
+   [kindlemodding.org](https://kindlemodding.org) for jailbreak +
+   KOReader installation steps for your device/firmware).
+2. Copy `koplugin/tachikindle.koplugin/` to KOReader's `plugins/`
+   directory on the device (typically
+   `/mnt/us/koreader/plugins/tachikindle.koplugin/` on Kindle).
+3. Restart KOReader (or the device). TachiKindle appears in KOReader's
+   plugin/tools menu.
+4. Open the Extensions Manager from TachiKindle's menu to browse and
+   download online manga sources, or point KOReader at a folder of
+   `.cbz`/image-folder comics for fully offline reading.
 
-If the app ever hangs or the screen goes black: the launcher script
-restores the Kindle UI even if killed or if the binary crashes (verified,
-see Phase 4/6 below) — but if something goes wrong anyway, SSH in (see
-Device access) and run `start lab126_gui`.
+## Online sources
 
-## Building from source
+Source definitions are downloaded on-device from the companion
+[tachikindle-sources](https://github.com/Darkgoatie/tachikindle-sources)
+catalog repo via the in-app Extensions Manager -- they are not bundled
+with the plugin itself (except a few reference sources kept in-repo
+under `extensions/sources/en/` for development/testing).
 
-Cross-compiling happens in **WSL2** (Ubuntu), not native Windows —
-koxtoolchain doesn't build on Windows and KindleModding's prebuilt
-release targets Linux.
+Current catalog, with real status (verified live, not assumed):
+
+| Source | Status |
+|---|---|
+| MangaDex | Working |
+| Comick | Working |
+| Asura Scans | Working |
+| MangaBuddy | Working |
+| MangaKatana | Working |
+| BatCave | Blocked by Cloudflare's JS challenge (no bypass; KOReader has no JS engine) |
+| Toonily | Blocked by Cloudflare's JS challenge (same limitation as BatCave) |
+
+Each source's `.tkext.json` descriptor documents its own verification
+status, known limitations, and the exact live checks it was built
+against -- see `extensions/format/README.md` for the format and
+`extensions/format/repo-protocol.md` for how the catalog/download
+protocol works.
+
+## Self-update
+
+TachiKindle's own plugin code can update itself: "Check for updates"
+in the plugin menu compares the installed build against the latest
+commit on this repo's active development branch and, if newer,
+downloads and applies it in place (KOReader restart required
+afterward). This is independent from the Extensions Manager, which
+manages *source* downloads from the separate catalog repo above.
+
+## Building/developing
+
+This is a plain KOReader plugin -- no cross-compilation or native
+toolchain is needed to develop it. `koplugin/tachikindle.koplugin/`
+can be copied straight onto any device running KOReader, or symlinked
+into a desktop KOReader checkout for faster iteration.
+
+### Tests
+
+A real Lua test suite (no live network required) covers every source
+adapter's parsing logic against fixtures derived from real, live-
+verified site/API responses:
 
 ```
-wsl -d Ubuntu
-export PATH="$HOME/x-tools/arm-kindlehf-linux-gnueabihf/bin:$PATH"
-cd /mnt/c/Users/halit/Desktop/Projects/TachiKindle
-make            # builds ./tachikindle
-make package     # stages build/pkg/ ready to copy to the device
-make test        # host-side unit + integration tests, plain gcc, no device needed
+bash tests/run_extension_tests.sh
 ```
 
-### One-time toolchain setup
+Requires a Lua 5.1-compatible interpreter (`lua5.1`, `lua`, or
+`luajit`) plus KOReader's real bundled `htmlparser`/`json` modules on
+`LUA_PATH` (see the script for `TK_LUA_DEPS_DIR`).
 
-```bash
-# 1. Cross-compiler (prebuilt release)
-cd ~
-wget https://github.com/KindleModding/koxtoolchain/releases/latest/download/kindlehf.tar.gz
-tar xf kindlehf.tar.gz    # -> ~/x-tools/arm-kindlehf-linux-gnueabihf
+### Device access (for development)
 
-# 2. FBInk (vendored as a git submodule, build once)
-cd third_party/FBInk && git submodule update --init --recursive
-export CROSS_TC=arm-kindlehf-linux-gnueabihf
-export PATH="$HOME/x-tools/arm-kindlehf-linux-gnueabihf/bin:$PATH"
-make kindle
-
-# 3. zlib + libzip, cross-built into a sysroot (not vendored -- see below)
-cd ~ && wget https://zlib.net/zlib-1.3.1.tar.gz && tar xf zlib-1.3.1.tar.gz
-cd zlib-1.3.1
-CC=arm-kindlehf-linux-gnueabihf-gcc AR=arm-kindlehf-linux-gnueabihf-ar \
-  ./configure --static --prefix=/root/sysroot-kindlehf
-make && make install
-
-cd ~ && wget https://libzip.org/download/libzip-1.11.2.tar.gz && tar xf libzip-1.11.2.tar.gz
-cd libzip-1.11.2 && mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/repo/toolchain-kindle.cmake \
-  -DCMAKE_INSTALL_PREFIX=/root/sysroot-kindlehf \
-  -DBUILD_SHARED_LIBS=OFF -DENABLE_BZIP2=OFF -DENABLE_LZMA=OFF -DENABLE_ZSTD=OFF \
-  -DENABLE_OPENSSL=OFF -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOC=OFF \
-  -DZLIB_LIBRARY=/root/sysroot-kindlehf/lib/libz.a -DZLIB_INCLUDE_DIR=/root/sysroot-kindlehf/include
-make && make install
-```
-
-The Makefile's `SYSROOT` variable points at `/root/sysroot-kindlehf` --
-this lives inside the WSL filesystem, not this repo, and needs rebuilding
-if the WSL instance is ever recreated.
-
-## Device access (for development)
-
-SSH is via **KOReader's built-in SSH server** (Tools > Network > SSH
-server in KOReader), port 2222, key-based auth only.
-
-USBNetwork/usbnetlite do **not** work on this jailbreak stack -- they
-depend on MRPI, which the `hdnext` stack doesn't ship. Don't waste time
-on them; KOReader's SSH server is the actual working path, confirmed
-over WiFi.
+SSH is via KOReader's built-in SSH server (Tools > Network > SSH
+server), port 2222, key-based auth only. The Kindle's IP is
+DHCP-leased -- check the device's network settings each session.
 
 ```
 ssh-keygen -t ed25519 -f ~/.ssh/kindle_ed25519 -N ""
-# copy ~/.ssh/kindle_ed25519.pub into /mnt/us/koreader/settings/SSH/authorized_keys
-# via USB mass storage, then toggle KOReader's SSH server off/on to reload it
+# copy the .pub key into the device's KOReader SSH authorized_keys,
+# then toggle KOReader's SSH server off/on to reload it
 
 ssh -i ~/.ssh/kindle_ed25519 -p 2222 root@<current-ip>
 ```
 
-The Kindle's IP is DHCP-leased, not static -- check `;711` in the Kindle
-search bar each session.
-
-**Windows gotcha:** if SSH/ping to the Kindle stop working after a
-network change on the dev PC, check `Get-NetConnectionProfile` -- if the
-WiFi profile shows "Public" instead of "Private", Windows silently
-blocks LAN traffic to the Kindle even though both devices show valid
-ARP entries. Fix (elevated PowerShell):
-`Set-NetConnectionProfile -Name "<profile>" -NetworkCategory Private`
-
-### Dev tools
-
-- `tools/deploy.sh` -- builds and scp's the binary to a running device
-  (`KINDLE_IP=<ip> ./tools/deploy.sh`)
-- `tools/grab.sh` -- screenshots the live e-ink screen for visual
-  verification, run from WSL (`KINDLE_IP=<ip> ./tools/grab.sh out.png`).
-  Reads `/dev/fb0` directly and converts with ImageMagick, since there's
-  no `fbgrab` on this device. **The fb double-buffers**
-  (`yres_virtual=3296=2x1648`) -- only the first `1248*1648` bytes are a
-  real frame, or the capture comes out doubled/garbled.
-
 ## Architecture
 
-- `src/main.c` -- entry point, signal handlers, event loop
-- `src/app.c` / `app.h` -- screen state machine
-- `src/fb.c` -- FBInk wrapper: framebuffer init, blitting, refresh
-  policy (DU for list scroll, GC16 for page turns, flash every 6th turn)
-- `src/input.c` -- evdev touch input: auto-detects the touchscreen node,
-  protocol B multitouch, classifies taps/swipes
-- `src/library.c` -- scans `/mnt/us/tachikindle/library/` into
-  series/chapters, natural sort
-- `src/archive.c` -- CBZ reading via libzip, natural sort, exclusion
-  rules (`__MACOSX/`, `Thumbs.db`, `ComicInfo.xml`, dotfiles)
-- `src/image.c` -- stb_image decode, aspect-fit scaling, grayscale,
-  16-level ordered dither, 40-megapixel decode ceiling
-- `src/progress.c` -- reading position, atomic (write-then-rename) save
-- `src/ui_library.c` / `ui_chapters.c` / `ui_reader.c` -- the three screens
-- `src/widget.c` -- shared e-ink UI primitives (boxes, lists, toasts)
-- `src/signals.c` -- crash safety (SIGSEGV/SIGBUS/SIGTERM handlers)
-- `extension/TachiKindle.sh` -- the Scriptlet launcher; stops/restarts
-  `lab126_gui`, restores the UI even if killed or the binary crashes
-
-See `.hermes/plans/2026-09-18_TachiKindle-implementation-plan.md` for
-the full phase-by-phase build plan this followed.
+- `koplugin/tachikindle.koplugin/main.lua` -- plugin entry point, menu
+  wiring
+- `tachikindlesource.lua` -- generic source engine: HTTP fetch, CSS
+  selector extraction (via KOReader's bundled `htmlparser`), pagination,
+  the `.tkext.json` schema loader
+- `tachikindlebrowser.lua` -- Extensions Manager UI: repo/catalog
+  browsing, download/update/remove of installed sources
+- `tachikindlesourcebrowser.lua` -- per-source browse/search/chapter UI
+- `tachikindlereader.lua` -- chapter/page reading UI
+- `tachikindlefavorites.lua` / `tachikindleprogress.lua` -- persisted
+  favorites and reading position
+- `tachikindleupdater.lua` -- self-update mechanism (see above)
+- `sources/en/*.lua` -- per-source `source_script` implementations;
+  most are thin passthroughs to the generic selector engine, some
+  (MangaDex, Comick, Asura Scans, MangaBuddy, MangaKatana) implement
+  custom logic where the target site needs more than CSS selectors
+  (JSON APIs, embedded JS data blobs, etc.) -- see each source's
+  `.tkext.json` for what and why.
+- `extensions/format/` -- the `.tkext.json` schema, the catalog/
+  repo-protocol docs, and the `source_script` authoring guide
 
 ## Known issues / not yet built
 
-- **CBZ only.** CBR/RAR support was explicitly deferred (see the plan's
-  scope section) -- needs vendoring unrar.
-- **No cover thumbnails.** The library screen is a text list of series
-  names, not a cover grid. Thumbnail generation (decode + cache) was
-  deferred as speculative until a reader existed to open into -- it's
-  now a reasonable next step.
-- **No settings UI / rescan command.** Config is implicit (fixed paths
-  under `/mnt/us/tachikindle/`); relaunching the app rescans the library
-  automatically, there's no in-app "rescan" action yet.
-- **Reader scaling is a known rough edge.** Pages are blitted at native
-  decode resolution clipped to the screen, not resampled to fit --
-  correct for already screen-sized scans, visibly wrong for
-  oversized/undersized source images. Wiring in `stb_image_resize2`
-  (already vendored) is the fix.
-- **Touch coordinate calibration was not interactively verified.** The
-  auto-detection (`ABS_MT_POSITION_X` probing) and event parsing are
-  confirmed correct and the timeout path was verified live, but no one
-  physically tapped the touchscreen during a real session to confirm
-  swipe direction isn't inverted by a rotation quirk. Worth a first-use
-  sanity check.
-- **No online sources.** Deliberately out of scope for v1 -- see the
-  plan's Phase 8 for what that would take (TLS, an HTML parser, a
-  declarative per-site scraper format) and why it's a separate project
-  once the offline reader is stable.
-
-## Verified on real hardware (2026-09-19)
-
-Every phase of the build plan was checked against the actual device, not
-just compiled and assumed working:
-
-- Toolchain, FBInk, and the stop/start UI lifecycle (Phase 0)
-- Framebuffer + evdev input layers, including a live smoke test (Phase 2)
-- Full navigation (library -> chapters -> reader, back at every level)
-  via host-side integration tests, plus the real binary opening a real
-  CBZ and drawing a decoded page on the e-ink screen (Phase 3)
-- The Scriptlet launcher restoring the Kindle UI both on normal exit and
-  after `kill -TERM`, confirmed the background binary actually dies too
-  (Phase 4)
-- The screenshot tool, which caught a real framebuffer double-buffering
-  bug on first use (Phase 5)
-- Crash-safety signal handlers, a 40-megapixel decode ceiling, and
-  performance/memory/battery on a synthetic 500-chapter library: 7.7ms
-  cold scan, ~4.7MB peak RSS, under 1% CPU idle (Phase 6)
-
-26 assertions across 6 host-side test binaries pass via `make test`.
+- BatCave and Toonily are Cloudflare-blocked (see table above) --
+  fixture-tested but non-functional live until a JS-challenge-solving
+  mechanism exists (none is currently planned; KOReader has no
+  WebView/JS engine to lean on).
+- Some titles on working sources may have most/all chapters hosted
+  externally (e.g. licensed to Webtoon/MangaPlus/KManga) and will
+  correctly show as "no chapters" via that source -- this is expected,
+  not a bug.
+- No CBR/RAR support for offline libraries -- CBZ and loose image
+  folders only.
