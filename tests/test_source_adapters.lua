@@ -75,7 +75,7 @@ end)
 
 test("downloadable bare-filename source_script is loaded via loadfile", function()
     local scripts_dir = "./tachikindle/sources/scripts"
-    os.execute('mkdir "' .. scripts_dir .. '" 2>/dev/null')
+    os.execute('mkdir -p "' .. scripts_dir .. '" 2>/dev/null')
     local script_path = scripts_dir .. "/Downloadable.lua"
     local sf = assert(io.open(script_path, "w"))
     sf:write([[
@@ -102,7 +102,7 @@ end)
 
 test("downloadable source_script with syntax error fails loudly", function()
     local scripts_dir = "./tachikindle/sources/scripts"
-    os.execute('mkdir "' .. scripts_dir .. '" 2>/dev/null')
+    os.execute('mkdir -p "' .. scripts_dir .. '" 2>/dev/null')
     local script_path = scripts_dir .. "/Broken.lua"
     local sf = assert(io.open(script_path, "w"))
     sf:write("this is not valid lua (((")

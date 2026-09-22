@@ -2,10 +2,24 @@
 package.path = 'koplugin/tachikindle.koplugin/?.lua;' .. package.path
 package.preload.socketutil = function() return {} end
 package.preload.logger = function() return {info = function() end, warn = function() end} end
-package.preload.datastorage = function() return {} end
+package.preload.datastorage = function() return {getDataDir = function() return "." end} end
 package.preload['libs/libkoreader-lfs'] = function() return {} end
 local Source = require('tachikindlesource')
 local JSON = require('json')
+
+-- BatCave's descriptor uses a downloadable-form source_script
+-- ("BatCave.lua"); mirror the real download flow by copying the
+-- repo's bundled copy into the scratch scripts dir before loading.
+do
+    local scripts_dir = Source.scriptsDir()
+    os.execute('mkdir -p "' .. scripts_dir .. '" 2>/dev/null')
+    local sf = assert(io.open('koplugin/tachikindle.koplugin/sources/en/BatCave.lua', 'r'))
+    local body = sf:read('*a')
+    sf:close()
+    local df = assert(io.open(Source.installedScriptPath('BatCave.lua'), 'w'))
+    df:write(body)
+    df:close()
+end
 local cases = {
     {
         name = 'readallcomics', chapter = 'https://readallcomics.com/synthetic-issue/',

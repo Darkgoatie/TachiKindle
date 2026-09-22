@@ -19,10 +19,24 @@ if [[ -z "$LUA_BIN" ]]; then
   exit 127
 fi
 
+# Real KOReader modules (htmlparser, json) that this project's runtime
+# require()s. These are NOT vendored into this repo -- they're KOReader's
+# own bundled common/ modules, copied once into a persistent scratch dir
+# (see tachikindle-kindle-dev skill: "Verify extension selectors locally
+# without the device"). Point LUA_PATH at that dir if present.
+DEPS_DIR="${TK_LUA_DEPS_DIR:-/root/tk-comics-deps/common}"
+if [[ -d "$DEPS_DIR" ]]; then
+  export LUA_PATH="${DEPS_DIR}/?.lua;${DEPS_DIR}/?/init.lua;${LUA_PATH:-;}"
+  echo "Using real KOReader deps from: $DEPS_DIR"
+else
+  echo "Warning: $DEPS_DIR not found -- tests requiring real htmlparser/json will fail to load those modules." >&2
+fi
+
 tests=(
   "tests/test_source_adapters.lua"
   "tests/test_comic_source_loading.lua"
   "tests/test_selector_extensions_smoke.lua"
+  "tests/test_mangadex_source.lua"
   "tests/test_weebcentral_chapter_fallback.lua"
   "tests/test_readallcomics.lua"
   "tests/test_readcomiconline_adapter.lua"

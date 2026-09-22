@@ -206,6 +206,27 @@ end
 
 local Source = require("tachikindlesource")
 
+-- WeebCentral's descriptor uses a downloadable-form source_script
+-- ("WeebCentral.lua"), which the runtime loads via loadfile() from
+-- the installed scripts dir rather than require(). Mirror what the
+-- real download flow does: copy the repo's bundled copy of the
+-- script into that scratch location before loading the descriptor.
+local function installBundledScript(name)
+    local scripts_dir = Source.scriptsDir()
+    os.execute('mkdir -p "' .. scripts_dir .. '" 2>/dev/null')
+    local src_path = "koplugin/tachikindle.koplugin/sources/en/" .. name
+    local sf = assert(io.open(src_path, "r"))
+    local body = sf:read("*a")
+    sf:close()
+    local dest_path = Source.installedScriptPath(name)
+    local df = assert(io.open(dest_path, "w"))
+    df:write(body)
+    df:close()
+end
+
+installBundledScript("WeebCentral.lua")
+installBundledScript("BatCave.lua")
+
 local tests = 0
 local function test(name, fn)
     fn()

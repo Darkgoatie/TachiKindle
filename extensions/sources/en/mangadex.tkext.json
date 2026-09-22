@@ -1,0 +1,63 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.mangadex",
+  "name": "MangaDex",
+  "lang": "en",
+  "base_url": "https://api.mangadex.org",
+  "version_code": 1,
+  "source_script": "sources/en/mangadex",
+  "content_warning": "MIXED",
+
+  "_notes": [
+    "MangaDex is a real public JSON REST API (https://api.mangadex.org), not an HTML-scraped site -- there is no HTML to select from. All logic lives in koplugin/tachikindle.koplugin/sources/en/mangadex.lua, which is loaded via require('sources/en/mangadex') per tachikindlesource.lua's canonicalSourceScriptForId. The generic *WithSelectors helpers in tachikindlesource.lua are never invoked for this source; fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list are all implemented directly.",
+    "'selectors' is schema-required to be a non-empty object with a fixed set of required keys (manga_list_item, manga_title, manga_url, details_title, chapter_item, chapter_title, chapter_url, page_image) -- see extensions/format/schema-1.0.json. It does NOT tolerate an empty {} because those keys are individually required. Since none of them apply to a JSON API, every value is set to null here, mirroring the precedent already established by en/batcave.tkext.json (which also sets chapter_item/chapter_title/chapter_url/page_image to null with an explicit '_selectors_note' disclaiming generic-selector support). tachikindlebrowser.lua's own shape check (the 'required' list around line 418) only checks for top-level key PRESENCE ('id','name','lang','base_url','version_code','source_script','endpoints','selectors'), not for selectors' internal contents, so null leaf values pass that check.",
+    "manga_url is encoded as base_url .. '/title/' .. <mangadex-manga-uuid> (mirrors mangadex.org's own real /title/{uuid} web URL scheme, purely as a stable identifier string -- this source never actually fetches manga_url as an HTML page, it only extracts the trailing UUID from it in Lua before calling /manga/{uuid}).",
+    "chapter_url is encoded as base_url .. '/chapter/' .. <mangadex-chapter-uuid>, extracted the same way before calling /at-home/server/{uuid}.",
+    "endpoints below are declarative documentation of the real MangaDex REST routes this source calls; the Lua source_script builds its own query strings (array params like translatedLanguage[] and includes[] don't roundtrip losslessly through the schema's single {page}/{query} placeholder substitution), so 'path' values are the base route only and are not fed through tachikindlesource.lua's resolveUrl/fillTemplate at runtime.",
+    "User-Agent: MangaDex documents that requests need a real, descriptive User-Agent (rate-limits/blocks generic ones) -- set via client.user_agent below and also applied directly by the Lua script (which builds its own http headers rather than going through TachiKindleSource:fetch, see mangadex.lua's HEADERS table)."
+  ],
+
+  "client": {
+    "user_agent": "TachiKindle/1.0 (KOReader manga plugin; +https://github.com/) MangaDexSource/1.0",
+    "extra_headers": { "Accept": "application/json" }
+  },
+
+  "endpoints": {
+    "popular":        { "method": "GET", "path": "/manga" },
+    "latest":         { "method": "GET", "path": "/manga" },
+    "search":         { "method": "GET", "path": "/manga" },
+    "manga_details":  { "method": "GET", "path": "/manga/{manga_url}" },
+    "chapter_list":   { "method": "GET", "path": "/manga/{manga_url}/feed" },
+    "page_list":      { "method": "GET", "path": "/at-home/server/{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": null,
+    "manga_title": null,
+    "manga_url": null,
+    "details_title": null,
+    "chapter_item": null,
+    "chapter_title": null,
+    "chapter_url": null,
+    "page_image": null
+  },
+  "_selectors_note": "All selector keys are null: this source is a JSON REST API with no HTML DOM to select against. fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list in sources/en/mangadex.lua fully replace tachikindlesource.lua's generic *WithSelectors codepaths for this source, so these fields are never read at runtime -- they exist only to satisfy schema-1.0.json's 'required' list for the 'selectors' object.",
+
+  "pagination": { "strategy": "fixed_page_size", "page_size": 20 },
+
+  "date_format": "yyyy-MM-dd'T'HH:mm:ssXXX",
+
+  "filters": [],
+
+  "update_strategy": "ALWAYS_UPDATE",
+
+  "verification": {
+    "status": "live-verified 2026-09-22",
+    "live_requests": [
+      "GET https://api.mangadex.org/manga?limit=1 -> 200, real manga collection JSON (id/attributes.title/altTitles/description/tags/relationships confirmed)",
+      "GET https://api.mangadex.org/manga?limit=2&includes[]=cover_art -> 200, relationships include cover_art with attributes.fileName (e.g. '0c6c8758-6819-4262-9671-30d5989c0fb8.jpg')",
+      "GET https://api.mangadex.org/manga/{id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=5 -> 200, real chapter collection (attributes.chapter/volume/title/translatedLanguage/publishAt, relationships incl. manga/scanlation_group)",
+      "GET https://api.mangadex.org/at-home/server/{chapterId} -> 200, real { result, baseUrl, chapter: { hash, data: [...jpg filenames], dataSaver: [...] } }"
+    ]
+  }
+}
