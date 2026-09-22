@@ -43,6 +43,11 @@ tests=(
   "tests/test_readcomiconline_adapter.lua"
   "tests/test_xoxocomics.lua"
   "tests/test_batcave_adapter.lua"
+  "tests/test_comick_source.lua"
+  "tests/test_asurascans_selectors.lua"
+  "tests/test_toonily_selectors.lua"
+  "tests/test_mangabuddy_selectors.lua"
+  "tests/test_mangakatana_source.lua"
 )
 
 pass=0

@@ -1,0 +1,76 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.comick",
+  "name": "Comick",
+  "lang": "en",
+  "base_url": "https://comick.live",
+  "version_code": 1,
+  "source_script": "sources/en/comick",
+  "content_warning": "MIXED",
+
+  "_notes": [
+    "Ported from keiyoushi/extensions-source's Kotlin 'Comick (Unoriginal)' extension (src/all/comicklive, package eu.kanade.tachiyomi.extension.all.comicklive, class Comick : KeiSource()) -- see upstream block below. That upstream targets multiple comick.* mirror domains via KeiSource's mirrors() mechanism; this TachiKindle port targets a single base_url (https://comick.live) since the schema has no mirror-list concept, matching how other single-base-url sources in this repo are structured.",
+    "Comick is a real JSON REST API for browse/list endpoints (/api/comics/top, /api/chapters/latest, /api/comics/{slug}/chapter-list) but manga details and page images are embedded as inline JSON inside HTML <script> tags on real HTML pages (#comic-data on /comic/{slug}, #sv-data on /comic/{slug}/{chapter-path}) -- there is no separate JSON API endpoint for these two. sources/en/comick.lua therefore fetches those two pages as HTML text and regex-extracts the JSON blob out of the matching <script id=\"...\"> tag before JSON-decoding it, rather than using tachikindlesource.lua's htmlparser-based selector helpers (which extract element text/attributes, not embedded script JSON).",
+    "'selectors' is schema-required to be a non-empty object with a fixed set of required keys -- see extensions/format/schema-1.0.json. Every value is null here, mirroring en/mangadex.tkext.json's and en/batcave.tkext.json's precedent: none of tachikindlesource.lua's generic *WithSelectors codepaths are used since fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list are all implemented directly in sources/en/comick.lua.",
+    "Search (GET /api/search) is real per the upstream Kotlin source but was NOT live-verified here: every live request to it during porting returned a Cloudflare 'Just a moment...' JS challenge page (not JSON), even with a browser-like User-Agent -- see verification block. sources/en/comick.lua still implements search using the same query parameters as upstream (order_by/order_direction/q/type=comic/showAll/exclude_mylist) since that is the real, current upstream logic, but this specific endpoint is marked UNVERIFIED until it can be checked from an environment that clears the challenge (e.g. a real browser session with a valid cf_clearance cookie). fetch_manga_list falls back to /api/comics/top (verified live) for the 'popular' endpoint, which needs no Cloudflare clearance.",
+    "manga_url is encoded as base_url .. '/comic/' .. <slug> (mirrors comick.live's own real /comic/{slug} web URL, and is also the real URL fetched for manga details -- unlike MangaDex's UUID-based scheme, this one IS the actual details page).",
+    "chapter_url is encoded as base_url .. '/comic/' .. <manga-slug> .. '/' .. <chapter-hid> .. '-chapter-' .. <chap> .. '-' .. <lang> (mirrors the real chapter URL scheme observed live, e.g. /comic/world-destruction-war/RVbE7LG-chapter-7-en) and is fetched directly as the real chapter reader HTML page to extract #sv-data.",
+    "Only the 'en' chapter language is requested (?lang=en on the chapter-list endpoint), matching this repo's per-language source directory convention (see mangadex.lua's identical note) and the id 'en.comick'.",
+    "endpoints below are declarative documentation of the real Comick REST/HTML routes this source calls; the Lua source_script builds its own query strings and does its own HTML script-tag extraction, so 'path' values are not fed through tachikindlesource.lua's resolveUrl/fillTemplate at runtime (same convention as en/mangadex.tkext.json)."
+  ],
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36 TachiKindle/1.0 ComickSource/1.0",
+    "extra_headers": { "Accept": "text/html,application/json;q=0.9,*/*;q=0.8" }
+  },
+
+  "endpoints": {
+    "popular":        { "method": "GET", "path": "/api/comics/top" },
+    "latest":         { "method": "GET", "path": "/api/chapters/latest" },
+    "search":         { "method": "GET", "path": "/api/search" },
+    "manga_details":  { "method": "GET", "path": "/comic/{manga_url}" },
+    "chapter_list":   { "method": "GET", "path": "/api/comics/{manga_url}/chapter-list" },
+    "page_list":      { "method": "GET", "path": "/comic/{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": null,
+    "manga_title": null,
+    "manga_url": null,
+    "details_title": null,
+    "chapter_item": null,
+    "chapter_title": null,
+    "chapter_url": null,
+    "page_image": null
+  },
+  "_selectors_note": "All selector keys are null: manga_list/latest/chapter-list are a JSON REST API, and manga_details/page_list are HTML pages whose real payload is embedded JSON inside a <script id=\"comic-data\"|\"sv-data\"> tag, not plain DOM text/attributes -- there is no CSS-selector-shaped data here for tachikindlesource.lua's generic helpers to extract. sources/en/comick.lua fully replaces those codepaths for this source; these fields exist only to satisfy schema-1.0.json's 'required' list for 'selectors'.",
+
+  "pagination": { "strategy": "fixed_page_size", "page_size": 60 },
+
+  "date_format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
+
+  "filters": [],
+
+  "update_strategy": "ALWAYS_UPDATE",
+
+  "upstream": {
+    "project": "keiyoushi/extensions-source",
+    "url": "https://github.com/keiyoushi/extensions-source/tree/master/src/all/comicklive",
+    "note": "Ported from the Kotlin 'Comick (Unoriginal)' Tachiyomi/Mihon extension (package eu.kanade.tachiyomi.extension.all.comicklive, files Comick.kt / Dto.kt / Filters.kt), retrieved via GitHub code search + raw.githubusercontent.com on 2026-09-22. That upstream is multi-mirror (all/) and configurable (language whitelist preference, rich filter list); this TachiKindle port targets the single https://comick.live mirror and implements only the four required source_script hooks (fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list) with a hardcoded en-only chapter-language filter, since TachiKindle's extension format has no equivalent of Tachiyomi's ConfigurableSource preferences or multi-mirror source list."
+  },
+
+  "verification": {
+    "status": "partially live-verified 2026-09-22",
+    "live_requests": [
+      "GET https://comick.live/api/comics/top?days=7&type=follow -> 200, real JSON { data: [ { id, title, slug, content_rating, genres[ids], default_thumbnail, ... } ] }",
+      "GET https://comick.live/api/metadata -> 200, real JSON { genres: [{id,name,slug,group,comic_count}], tags: [{id,name,slug}] }",
+      "GET https://comick.live/api/comics/world-destruction-war/chapter-list?lang=en -> 200, real JSON { data: [{id,hid,chap,title,vol,lang,group_name[],created_at,updated_at,...}], pagination: {current_page,last_page,per_page,total} }",
+      "GET https://comick.live/comic/world-destruction-war -> 200 real HTML; document.getElementById('comic-data').textContent is real JSON: { id, title, slug, status:1, desc, translation_completed, md_comic_md_genres:[{md_genres:{name,slug,group}}], default_thumbnail, last_chapter, chapter_count, content_rating, ... } -- confirmed no separate authors/artists arrays are present on this particular title (upstream Kotlin reads data.authors/data.artists; this port defensively treats them as optional/possibly-absent, see comick.lua)",
+      "GET https://comick.live/comic/world-destruction-war/RVbE7LG-chapter-7-en -> 200 real HTML; document.getElementById('sv-data').textContent is real JSON: { chapter: { id, chap, hid, group_name, lang:'en', comic:{...}, images: [ { h, w, name, s, url, optimized } , ... ] } } -- confirmed full-resolution image URLs are absolute https://cdn1.comicknew.pictures/... webp links",
+      "GET https://comick.live/api/chapters/latest?order=new&page=1 -> 200, real JSON { data: [ { id, slug, title, default_thumbnail, chapter_latest_by_langs:{en:{...}}, recent_chapters:[...] } ] } -- confirms /api/chapters/latest is real and does not require Cloudflare clearance"
+    ],
+    "unverified": [
+      "GET https://comick.live/api/search?... returned Cloudflare's JS challenge page ('Just a moment...') instead of JSON in every attempt made during this port (plain curl and a real headless-browser tab, both with a real desktop User-Agent) -- the search endpoint's real JSON shape is assumed identical to /api/comics/top's item shape (per upstream Kotlin's shared BrowseComic DTO) but was not directly observed live. Marked UNVERIFIED; see comick.lua's fetch_manga_list search branch."
+    ]
+  }
+}

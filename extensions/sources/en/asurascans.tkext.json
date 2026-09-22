@@ -1,0 +1,89 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.asurascans",
+  "name": "Asura Scans",
+  "lang": "en",
+  "base_url": "https://asurascans.com",
+  "version_code": 1,
+  "source_script": "sources/en/asurascans",
+  "content_warning": "MIXED",
+
+  "_notes": [
+    "Asura Scans is a real JSON REST API (https://api.asurascans.com/api) for popular/latest/search/manga-details, PLUS an Astro/SSR HTML frontend (https://asurascans.com) that embeds chapter-list and page-list data as a JSON blob inside an <astro-island props=\"...\"> attribute rather than plain <a>/<img> tags -- there is no CSS-selector-only path through this site. All real logic lives in koplugin/tachikindle.koplugin/sources/en/asurascans.lua, loaded via require('sources/en/asurascans') per tachikindlesource.lua's canonicalSourceScriptForId. The generic *WithSelectors helpers are never invoked for this source; this follows the same precedent as en/mangadex (JSON API) and en/batcave (null selectors, adapter-owned logic), combined with a custom Astro-prop HTML extractor unique to this site.",
+    "'selectors' is schema-required to be a non-empty object with a fixed set of required keys -- since none of manga_list_item/manga_title/manga_url/details_title/chapter_item/chapter_title/chapter_url/page_image apply (this site is JSON API + Astro-prop JSON-in-HTML, not plain CSS-selectable markup), every value is set to null, mirroring en/mangadex.tkext.json and en/batcave.tkext.json.",
+    "Domain history (verified live 2026-09-22): the site migrated asurascans.com -> asuracomic.net and back to asurascans.com ('Project: Asura Revival', announced 2026-03-26, see https://asurascans.com/announcement/project-asura-revival). asurascans.com is the CURRENT live domain as of verification; the upstream keiyoushi Kotlin extension (github issue #14317) was still pointing at the stale asuracomic.net domain at the time of this port, so base_url here intentionally differs from that upstream commit's baseUrl.",
+    "manga_url is encoded as base_url .. '/series/' .. <api slug> (a stable identifier scheme, NOT a real fetchable page path -- the real public page path is /comics/<slug>-<8hexdigit-suffix>, but that suffix is unpredictable and only discoverable by first calling the API, exactly mirroring the upstream Kotlin extension's own slugMap indirection). manga_details/chapter_list/page_list all parse this back out in Lua before making the real request, matching the upstream OLD_FORMAT_MANGA_REGEX / slugMap pattern.",
+    "chapter_url is encoded as base_url .. '/series/' .. <slug> .. '/chapter/' .. <chapter number> for the same reason; fetch_page_list rewrites it to the real /comics/<slug>/chapter/<number> page before fetching.",
+    "Premium/locked chapters (is_premium=true in the chapters API) are included in the chapter list with a locked marker in the title (matching upstream's optional 'hide premium chapters' toggle, which this port does not implement as a filter -- it always includes them, consistent with upstream's own default preference value before the user changes it) but their pages are NOT fetchable without an authenticated access_token cookie the upstream extension obtains via a logged-in WebView; fetch_page_list returns an explicit error for locked chapters rather than a fabricated empty success.",
+    "Tile-scrambled ('anti-piracy' obfuscated) page images: some pages embed a fragment-encoded JSON blob (tiles/tile_cols/tile_rows) requiring client-side canvas de-scrambling (see upstream AsuraScans.kt's scrambledImageInterceptor, a bitmap-tile-shuffle undone via Android's Bitmap/Canvas APIs). KOReader/Lua has no equivalent image-manipulation library available here; this port surfaces the raw (still-scrambled) image URL for any page whose PageDto.tiles array is non-empty and flags it in a warning rather than claiming a working de-scramble.",
+    "Rate limit: upstream sets 2 requests / 2 seconds (excluding /covers/ CDN paths) via OkHttp rateLimit(); this schema has no rate_limit field, so a naive scraper here risks throttling/429s the real Kotlin extension avoids. Not implemented in the Lua port; noted as a limitation."
+  ],
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0",
+    "extra_headers": { "Referer": "https://asurascans.com/", "Accept": "application/json" }
+  },
+
+  "endpoints": {
+    "popular":       { "method": "GET", "path": "https://api.asurascans.com/api/series?offset={offset}&limit=20" },
+    "latest":        { "method": "GET", "path": "https://api.asurascans.com/api/series?offset={offset}&limit=20&sort=latest" },
+    "search":        { "method": "GET", "path": "https://api.asurascans.com/api/series?offset={offset}&limit=20&search={query}" },
+    "manga_details": { "method": "GET", "path": "https://api.asurascans.com/api/series/{manga_url}" },
+    "chapter_list":  { "method": "GET", "path": "{manga_url}" },
+    "page_list":     { "method": "GET", "path": "{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": null,
+    "manga_title": null,
+    "manga_url": null,
+    "details_title": null,
+    "chapter_item": null,
+    "chapter_title": null,
+    "chapter_url": null,
+    "page_image": null
+  },
+  "_selectors_note": "All selector keys are null: popular/latest/search/manga_details are a JSON REST API with no HTML DOM to select against, and chapter_list/page_list are HTML pages whose real data lives inside a JSON blob in an <astro-island props=\"...\"> attribute (Astro SSR component hydration payload), not in plain selectable tags -- htmlparser CSS selectors cannot reach it. fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list in sources/en/asurascans.lua fully replace tachikindlesource.lua's generic *WithSelectors codepaths for this source; these null fields exist only to satisfy schema-1.0.json's 'required' list for the 'selectors' object (precedent: en/mangadex.tkext.json, en/batcave.tkext.json).",
+
+  "pagination": { "strategy": "fixed_page_size", "page_size": 20 },
+
+  "date_format": "yyyy-MM-dd'T'HH:mm:ss'Z'",
+
+  "filters": [
+    { "type": "select", "id": "status", "label": "Status",
+      "options": [ ["", "Any"], ["ongoing", "Ongoing"], ["completed", "Completed"], ["hiatus", "On Hiatus"], ["dropped", "Dropped"] ] }
+  ],
+
+  "update_strategy": "ALWAYS_UPDATE",
+
+  "upstream": {
+    "project": "https://github.com/keiyoushi/extensions-source",
+    "path": "src/en/asurascans/src/eu/kanade/tachiyomi/extension/en/asurascans/AsuraScans.kt",
+    "license": "Apache-2.0",
+    "attribution": "Keiyoushi contributors; adapted AsuraScans.kt and Dto.kt to Lua for KOReader. Base domain updated from the upstream commit's asuracomic.net to the current live asurascans.com per keiyoushi/extensions-source issue #14317 and the site's own 2026-03-26 'Project: Asura Revival' announcement."
+  },
+
+  "limitations": [
+    "Tile-scrambled ('anti-piracy') chapter images are not de-scrambled (no canvas/bitmap library available in this Lua runtime); such pages are returned as their raw scrambled URL with a logged warning, not silently fixed.",
+    "Premium/subscriber-only chapters are listed but their pages cannot be fetched (requires an authenticated access_token cookie from a logged-in browser session); fetch_page_list returns an explicit error for these rather than an empty or fabricated success.",
+    "No client-side rate limiting is implemented (upstream self-limits to 2 req/2s); heavy browsing may trigger throttling the real Kotlin extension avoids.",
+    "manga_url/chapter_url are opaque identifier strings (base_url + /series/<slug>[/chapter/<n>]), not real fetchable page paths -- this mirrors the upstream extension's own slug-remapping indirection (real public path segments are unpredictable API-assigned suffixes)."
+  ],
+
+  "verification": {
+    "status": "live-verified 2026-09-22",
+    "live_requests": [
+      "GET https://api.asurascans.com/api/series?offset=0&limit=5 -> 200, real JSON {data:[...], meta:{total,per_page,has_more}}, series objects with slug/title/cover/status/type/chapter_count/public_url confirmed",
+      "GET https://api.asurascans.com/api/series/mount-hua-sects-genius-phantom-swordsman -> 200, real JSON {recommended_series:[...], series:{id,slug,title,alt_titles,description,cover,banner,status,type,author,artist,genres:[{name}],public_url,source_url}}",
+      "GET https://asurascans.com/comics/mount-hua-sects-genius-phantom-swordsman (browser-rendered) -> 200, real <astro-island props=\"...&quot;chapters&quot;:[1,[[0,{&quot;id&quot;...&quot;number&quot;...&quot;slug&quot;:&quot;chapter-82&quot;...&quot;is_premium&quot;:false...&quot;published_at&quot;...}]]]...\"> confirmed, 82 real chapters present",
+      "GET https://asurascans.com/comics/mount-hua-sects-genius-phantom-swordsman/chapter/1 (browser-rendered) -> 200, real <astro-island component-export=\"default\" props=\"...&quot;pages&quot;:[1,[[0,{&quot;url&quot;:&quot;https://cdn.asurascans.com/asura-images/chapters/mount-hua-sects-genius-phantom-swordsman/1/001.webp?v=...&quot;,...}]]]...\"> confirmed, real cdn.asurascans.com page image URLs present, no 'tiles' field on this particular chapter (unscrambled)",
+      "No Cloudflare/anti-bot challenge encountered on either the API host or the HTML frontend during verification; both served real content directly."
+    ],
+    "assumptions": [
+      "The Astro props value is double-JSON-encoded as [type_tag, value] pairs (Astro's serialized-props wire format, matching upstream's unwrapAstro() recursive unwrap in Dto.kt) -- this Lua port implements the same recursive unwrap, verified against the real fetched props strings above but not exhaustively fuzzed against every possible Astro value shape (e.g. Date/Map/Set special encodings upstream also unwraps) since none were observed in the two pages fetched.",
+      "Tile-scrambled image handling (tiles/tile_cols/tile_rows fields) was NOT observed on the one live chapter fetched (chapter 1 of Mount Hua Sect's Genius Phantom Swordsman had no 'tiles' field) -- the scrambled-image code path is implemented per the real Dto.kt shape but is UNVERIFIED against an actual live scrambled response.",
+      "Premium-chapter page fetching (the access_token/X-Page-Token authenticated fallback path) is UNVERIFIED live since it requires an authenticated session; this port surfaces a clear error for locked chapters instead of attempting unauthenticated premium access.",
+      "search/latest sort query parameter names (?search=, ?sort=latest) are inferred from the upstream Kotlin SortFilter/UriFilter pattern (not decompiled exactly) and were not individually re-verified live in this port beyond the base ?offset=&limit= popular listing, which was confirmed live."
+    ]
+  }
+}

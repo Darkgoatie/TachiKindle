@@ -1,0 +1,60 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.mangabuddy",
+  "name": "MangaBuddy",
+  "lang": "en",
+  "base_url": "https://comizy.io",
+  "version_code": 1,
+  "source_script": "sources/en/mangabuddy",
+  "content_warning": "MIXED",
+  "theme": "none",
+
+  "_todo": [
+    "CONFIRMED LIVE (2026-09-22): mangabuddy.com itself is dead as a manga site -- every path 301-redirects to comizy.io (e.g. https://mangabuddy.com/popular -> https://comizy.io/popular, same HTTP response headers, Cloudflare-fronted). base_url therefore points at comizy.io, the real live host serving the content, not mangabuddy.com. Both are the same underlying app (upstream keiyoushi extension for this family is a generic 'MangaK' multisrc; MangaBuddy is one of several MangaK-themed sources that appear to have been consolidated/rebranded to comizy.io).",
+    "CONFIRMED LIVE: popular/latest/search do NOT come from server-rendered HTML list markup at all -- they come from a genuine separate JSON API host, https://api.comizy.io/titles/search?sort=popular&window=week&page=1&limit=24 (also sort=latest, or q=<query> for search). Verified real response shape: {success, data:{items:[...], pagination:{has_next,...}}}. Because this is not CSS-selectable HTML, this descriptor cannot use the generic selectors-passthrough engine for manga_list at all; source_script implements this endpoint directly against the JSON API.",
+    "CONFIRMED LIVE: manga details and chapter pages are Next.js server-rendered pages that embed their real data as a JSON blob in <script id=\"__NEXT_DATA__\" type=\"application/json\">...</script> (props.pageProps.initialManga / initialChapter) -- not in visible DOM text/attributes a CSS selector could read cleanly. source_script parses this blob directly with a regex extraction + JSON decode rather than htmlparser selectors.",
+    "CONFIRMED LIVE, the key real quirk this port exists to document: the full chapter list is NOT on the manga details page. The details page's NEXT_DATA only carries a short 'latestChapters' preview. The real full chapter list requires a SECOND request to a separate ajax endpoint, https://api.comizy.io/titles/{id}/chapters?cv={cv} -- where {id} (internal API id, e.g. 'bNYW81j8') and {cv} (a cache-version timestamp) are only obtainable by first parsing the details page's __NEXT_DATA__ blob. Verified end-to-end live for 'Nice to See You': details page -> id=bNYW81j8, cv=1790072539160 extracted -> chapters endpoint returned all 29 real chapters, newest first.",
+    "CONFIRMED LIVE: chapter page images are also only in a chapter page's own __NEXT_DATA__ blob (initialChapter.pages[].url), real CDN URLs observed: https://x1.cmzcdn.org/e/<opaque-token>.webp, https://x2.cmzcdn.org/..., i.e. numbered subdomains per page -- these are legitimate absolute URLs already, no relative-path normalization needed.",
+    "Because none of the above four flows (JSON search API, embedded __NEXT_DATA__ details, two-hop chapter-list ajax, embedded __NEXT_DATA__ pages) can be expressed as CSS selectors against server-rendered list/item markup, the 'selectors' object below is a required-by-schema placeholder only and is NOT consulted by source_script (koplugin/tachikindle.koplugin/sources/en/mangabuddy.lua implements fetch_manga_list/fetch_manga_details/fetch_chapter_list/fetch_page_list directly). endpoints below likewise document the real URLs for reference; source_script builds them itself rather than using resolveUrl()/{placeholder} substitution, since {manga_url} here is the same URL used for both details AND as the seed for a follow-up id-based chapters call.",
+    "UNVERIFIED: whether comizy.io enforces Cloudflare bot-detection / rate limiting under sustained real-device use -- our live checks used a small number of plain requests with a desktop User-Agent and got clean 200s with real content each time (no CF challenge page observed), but this is not the same as sustained KOReader traffic from a residential IP.",
+    "UNVERIFIED: pagination beyond page=1/2 for popular/latest, and whether 'search' with an empty query behaves sanely (untested; only a non-empty query was verified live)."
+  ],
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0"
+  },
+
+  "endpoints": {
+    "popular":  { "method": "GET", "path": "https://api.comizy.io/titles/search?sort=popular&window=week&page={page}&limit=24" },
+    "latest":   { "method": "GET", "path": "https://api.comizy.io/titles/search?sort=latest&page={page}&limit=24" },
+    "search":   { "method": "GET", "path": "https://api.comizy.io/titles/search?q={query}&page={page}&limit=24" },
+    "manga_details": { "method": "GET", "path": "{manga_url}" },
+    "chapter_list":  { "method": "GET", "path": "{manga_url}" },
+    "page_list":     { "method": "GET", "path": "{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": "UNUSED: manga list comes from a JSON API, see source_script",
+    "manga_title": "UNUSED",
+    "manga_url": "UNUSED",
+    "details_title": "UNUSED: details come from __NEXT_DATA__, see source_script",
+    "chapter_item": "UNUSED: chapter list comes from a two-hop ajax API, see source_script",
+    "chapter_title": "UNUSED",
+    "chapter_url": "UNUSED",
+    "page_image": "UNUSED: page list comes from __NEXT_DATA__, see source_script"
+  },
+
+  "pagination": { "strategy": "has_next_selector" },
+
+  "date_format": "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+
+  "update_strategy": "ALWAYS_UPDATE",
+
+  "_upstream": {
+    "repository": "https://github.com/keiyoushi/extensions-source",
+    "source": "src/en/mangabuddy (thin @Source subclass of lib-multisrc/mangak's MangaKSource)",
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/keiyoushi/extensions-source/blob/main/LICENSE",
+    "attribution": "Keiyoushi extensions-source contributors; endpoint shapes (api host, chapters-by-id ajax, page-list source) cross-checked against the real upstream Kotlin MangaKSource.kt, then independently re-verified against live comizy.io traffic before being ported as custom Lua logic."
+  }
+}

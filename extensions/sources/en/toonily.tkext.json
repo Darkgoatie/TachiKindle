@@ -1,0 +1,66 @@
+{
+  "$schema": "tachikindle-extension-1.0",
+  "id": "en.toonily",
+  "name": "Toonily",
+  "lang": "en",
+  "base_url": "https://toonily.com",
+  "version_code": 1,
+  "source_script": "sources/en/toonily",
+  "content_warning": "MIXED",
+  "theme": "madara",
+
+  "_todo": [
+    "VERIFIED live 2026-09-22 via web_extract (Cloudflare JS challenge blocked a real headless-browser render, but plain HTTP GET through the extractor was NOT challenged and returned real page markup/text): https://toonily.com/webtoons?m_orderby=views returns a real manga listing (e.g. 'The Beginning After the End', 'Solo Leveling', ...); https://toonily.com/serie/the-beginning-after-the-end/ redirects to a real slugged details page (.../the-beginning-after-the-end-ea2130e6/) with a real chapter list (Chapter 1..243) and dates in 'MMM d, yy' format (e.g. 'Jul 10, 26') -- confirms base_url, the /serie/ mangaSubString, /webtoons?m_orderby= listing endpoint, and the chapter date_format below are real, not guessed.",
+    "UNVERIFIED (browser-rendered access, not just plain GET): a full headless-browser navigation to toonily.com hit a Cloudflare 'Performing security verification' interstitial (managed challenge) that did not auto-clear. Manga_list_item/details/chapter/page_image CSS selectors below were NOT re-derived from live DOM inspection in a rendered browser -- they are carried over unchanged from extensions/sources/en/madara_generic.tkext.json (div.page-item-detail, .post-title a, li.wp-manga-chapter, div.page-break img, etc.), which is the standard/default Madara theme markup that keiyoushi's real Toonily.kt (a thin subclass of the shared Madara multisrc base with NO custom selector overrides, only mangaSubString='serie', useNewChapterEndpoint=true, useLoadMoreRequest=Always, sendViewCount=false, a custom hi-res-cover CDN rewrite, and dateFormat 'MMM d, yy') also relies on unmodified. Confidence is high but this schema's runtime (plain GET, htmlparser, no JS execution) may itself be blocked by the same Cloudflare challenge in production the same way the browser was here; if so this source will need a Cloudflare-bypass mechanism this schema doesn't yet support.",
+    "Real Toonily.kt uses the Madara 'new chapter endpoint' (useNewChapterEndpoint=true) which POSTs to /wp-json/wp/v2/manga/{id}/chapters (or similar) rather than parsing chapters directly off the details page HTML in some cases, and uses useLoadMoreRequest=Always (AJAX admin-ajax.php pagination for popular/latest, not simple ?page=N GET). This schema has no POST/form_body templating wired to a per-source toggle, so this port uses the same plain GET pagination fallback as madara_generic -- this may return fewer/stale results on the real site if Toonily's old GET pagination path has since been fully removed (madara_generic's own _todo flags this same limitation project-wide).",
+    "Real Toonily.kt sends an explicit 'toonily-mature' cookie to bypass an age/mature content gate and does hi-res cover CDN rewriting (static.toonilycdn -> a non-thumbnail path) via a response interceptor; neither the age-gate cookie nor the cover rewrite is implemented here (this schema's client.extra_headers has no cookie-jar equivalent), so cover images may resolve to lower-res thumbnails and some pages could redirect to an age-gate/mature-warning page instead of real content."
+  ],
+
+  "client": {
+    "user_agent": "Mozilla/5.0 (Linux; Android 10) TachiKindle/1.0",
+    "extra_headers": { "Referer": "https://toonily.com/" }
+  },
+
+  "endpoints": {
+    "popular":  { "method": "GET", "path": "/webtoons?m_orderby=views&page={page}" },
+    "latest":   { "method": "GET", "path": "/webtoons?m_orderby=latest&page={page}" },
+    "search":   { "method": "GET", "path": "/?s={query}&post_type=wp-manga&page={page}" },
+    "manga_details": { "method": "GET", "path": "{manga_url}" },
+    "chapter_list":  { "method": "GET", "path": "{manga_url}" },
+    "page_list":     { "method": "GET", "path": "{chapter_url}" }
+  },
+
+  "selectors": {
+    "manga_list_item": "div.page-item-detail.manga",
+    "manga_title":     ".post-title a",
+    "manga_url":       { "sel": ".post-title a", "attr": "href" },
+    "manga_cover":      { "sel": "img", "attr": "data-src", "fallback_attr": "src" },
+    "has_next_page":   "a.nextpostslink",
+
+    "details_title":       "div.post-title h1",
+    "details_author":      "div.author-content > a",
+    "details_description": "div.summary__content",
+    "details_status":      "div.summary-content",
+    "details_genres":      "div.genres-content a",
+    "details_cover":       { "sel": "div.summary_image img", "attr": "data-src", "fallback_attr": "src" },
+
+    "chapter_item":  "li.wp-manga-chapter",
+    "chapter_title": "a",
+    "chapter_url":   { "sel": "a", "attr": "href" },
+    "chapter_date":  "span.chapter-release-date",
+
+    "page_image": { "sel": "div.page-break img", "attr": "data-src", "fallback_attr": "src" }
+  },
+
+  "pagination": { "strategy": "has_next_selector" },
+
+  "date_format": "MMM d, yy",
+
+  "filters": [
+    { "type": "text",   "id": "author", "label": "Author" },
+    { "type": "select", "id": "status", "label": "Status",
+      "options": [ ["", "Any"], ["end", "Completed"], ["on-going", "Ongoing"], ["canceled", "Cancelled"], ["on-hold", "On Hold"] ] }
+  ],
+
+  "update_strategy": "ALWAYS_UPDATE"
+}

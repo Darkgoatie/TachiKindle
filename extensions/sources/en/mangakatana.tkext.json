@@ -1,0 +1,60 @@
+{
+  "id": "en.mangakatana",
+  "name": "MangaKatana",
+  "lang": "en",
+  "base_url": "https://mangakatana.com",
+  "version_code": 1,
+  "source_script": "sources/en/mangakatana",
+  "content_warning": "SAFE",
+  "client": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+  },
+  "endpoints": {
+    "popular": {"method": "GET", "path": "/manga/page/{page}"},
+    "latest": {"method": "GET", "path": "/page/{page}"},
+    "search": {"method": "GET", "path": "/page/{page}?search={query}&search_by=1"},
+    "manga_details": {"method": "GET", "path": "{manga_url}"},
+    "chapter_list": {"method": "GET", "path": "{manga_url}"},
+    "page_list": {"method": "GET", "path": "{chapter_url}"}
+  },
+  "selectors": {
+    "manga_list_item": "div#book_list > div.item",
+    "manga_title": "div.text > h3 > a",
+    "manga_url": {"sel": "div.text > h3 > a", "attr": "href"},
+    "manga_cover": {"sel": "img", "attr": "src"},
+    "details_title": "h1.heading",
+    "details_author": ".author",
+    "details_status": ".value.status",
+    "details_genres": ".genres > a",
+    "details_description": ".summary > p",
+    "details_cover": {"sel": "div.media div.cover img", "attr": "src"},
+    "chapter_item": "div.chapters tr",
+    "chapter_title": "div.chapter a",
+    "chapter_url": {"sel": "div.chapter a", "attr": "href"},
+    "chapter_date": ".update_time",
+    "has_next_page": "a.next.page-numbers",
+    "page_image": null
+  },
+  "_selectors_note": "page_image is null on purpose: MangaKatana's reader page never puts real image URLs in <img> attributes -- every <img data-src=\"#\"> is a dead placeholder. Real per-page URLs are only present inside an inline <script> as a JS array literal (var <randomName>=['url1','url2',...]), located via a regex on a preceding 'data-src' string literal in that same script, exactly mirroring the upstream Kotlin extension's own regex-based extraction (imageArrayNameRegex / imageUrlRegex). Generic CSS-selector extraction cannot recover these URLs, so sources/en/mangakatana.lua implements fetch_page_list directly instead of relying on fetchPageListWithSelectors. Confirmed live 2026-09-22 against a real chapter page: 51/51 image URLs recovered via this exact mechanism (var thzq=[...]).",
+  "pagination": {"strategy": "has_next_selector"},
+  "date_format": "%b-%d-%Y",
+  "filters": [],
+  "_upstream": {
+    "repository": "https://github.com/keiyoushi/extensions-source",
+    "source": "src/en/mangakatana/src/eu/kanade/tachiyomi/extension/en/mangakatana/MangaKatana.kt",
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/keiyoushi/extensions-source/blob/main/LICENSE",
+    "attribution": "Keiyoushi extensions-source contributors; ported to Lua for TachiKindle."
+  },
+  "_limitations": [
+    "Upstream's dynamic Genre/Status/Sort/Chapters filters and the multi-server ('Server 1/2/3') reader preference are not exposed; default server (empty ?sv= suffix) is always used.",
+    "Upstream's getSearchMangaList special-cases a query that resolves straight to a manga details page (e.g. '?search=exact-slug' short-circuiting to a single-result MangasPage); this port always treats /page/{page}?search=... as a listing page, matching the common case verified live.",
+    "details_author selector reads only the first .author anchor; upstream joins every co-author with a comma. Multi-author titles will show a truncated author list.",
+    "Upstream adds an OkHttp network interceptor that rewrites the Content-Type of octet-stream image responses so image decoders don't choke; this Lua port performs no such rewrite, so a source that mis-serves an image as application/octet-stream may fail to render where the real extension would not."
+  ],
+  "verification": {
+    "fixture_tests": "tests/test_mangakatana_source.lua",
+    "live_metadata": "2026-09-22: GET https://mangakatana.com/manga/page/1 -> HTTP 200, 152640 bytes, real div#book_list > div.item cards confirmed (112 items, e.g. 'Aishiteru, Uso Dakedo.' -> https://mangakatana.com/manga/aishiteru-uso-dakedo.10797). GET that manga_url and a real chapter (.../c1, HTTP 200, 55217 bytes) confirmed: every <img data-src=\"#\"> is a dead placeholder (51 of them), and the real inline <script> containing var thzq=['https://i1.mangakatana.com/token/....jpg', ...] (51 real URLs) was independently re-verified byte-for-byte via a fresh live fetch, not just trusted from the subagent's report.",
+    "status": "fixture-tested; independently live-verified (listing, details, chapters, and the page-image JS-array mechanism all re-confirmed against a fresh live fetch)"
+  }
+}
