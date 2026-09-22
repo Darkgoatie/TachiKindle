@@ -1,10 +1,10 @@
--- Updater unit tests: version comparison, check-flow against the
--- real GitHub API response shapes, and error handling. JSON fixture
--- shapes below were verified live on 2026-09-22 via:
---   curl https://api.github.com/repos/Darkgoatie/TachiKindle/releases/latest
---   curl "https://api.github.com/repos/Darkgoatie/TachiKindle/commits?per_page=1"
--- (see tachikindleupdater.lua's module comment for the confirmed
--- real fields used: tag_name, zipball_url, and commits[1].sha).
+-- Updater unit tests: build-SHA comparison, check-flow against the
+-- real GitHub commits API response shape, and error handling. JSON
+-- fixture shape below was verified live on 2026-09-22 via:
+--   curl "https://api.github.com/repos/Darkgoatie/TachiKindle/commits?sha=test/source-script-format-system&per_page=1"
+-- (see tachikindleupdater.lua's module comment: every push to
+-- DEV_BRANCH is treated as a new build, compared by commit SHA, not
+-- by a manually-bumped VERSION/release tag).
 package.path = "koplugin/tachikindle.koplugin/?.lua;" .. package.path
 
 local http_response_body, http_response_code = "{}", 200
@@ -60,86 +60,36 @@ end
 local function newPlugin() return setmetatable({}, FakePlugin) end
 
 -- Real shape confirmed live against
--- api.github.com/repos/Darkgoatie/TachiKindle/releases/latest
-local REAL_RELEASE_JSON = [[
-{
-  "tag_name": "v1.0.0",
-  "name": "v1.0.0",
-  "target_commitish": "main",
-  "zipball_url": "https://api.github.com/repos/Darkgoatie/TachiKindle/zipball/v1.0.0",
-  "tarball_url": "https://api.github.com/repos/Darkgoatie/TachiKindle/tarball/v1.0.0",
-  "draft": false,
-  "prerelease": false
-}
-]]
-
--- Real shape confirmed live against
--- api.github.com/repos/Darkgoatie/TachiKindle/commits?per_page=1
+-- api.github.com/repos/Darkgoatie/TachiKindle/commits?sha=test/source-script-format-system&per_page=1
 local REAL_COMMITS_JSON = [[
 [
   {
-    "sha": "2e23c3a58b8cded994715481b38e797ce7a2a1c3",
-    "commit": { "message": "Set default repo to in-repo production index" },
-    "html_url": "https://github.com/Darkgoatie/TachiKindle/commit/2e23c3a58b8cded994715481b38e797ce7a2a1c3"
+    "sha": "9db004c55961ec0e6f3eead51ca93f91018ef29f",
+    "commit": { "message": "Flag Toonily as live-blocked by Cloudflare, like BatCave" },
+    "html_url": "https://github.com/Darkgoatie/TachiKindle/commit/9db004c55961ec0e6f3eead51ca93f91018ef29f"
   }
 ]
 ]]
 
-test("version compare: lower current, higher latest => update available", function()
+test("version compare util: still available for cosmetic/manual use", function()
     assert(Updater.isNewer("1.0.0", "1.0.1") == true)
-    assert(Updater.isNewer("1.0.0", "1.1.0") == true)
-    assert(Updater.isNewer("1.0.0", "2.0.0") == true)
-end)
-
-test("version compare: equal or current ahead => no update", function()
     assert(Updater.isNewer("1.0.0", "1.0.0") == false)
-    assert(Updater.isNewer("1.2.0", "1.1.9") == false)
-    assert(Updater.isNewer("2.0.0", "1.9.9") == false)
-end)
-
-test("version compare: leading 'v' and missing components tolerated", function()
-    assert(Updater.isNewer("v1.0.0", "v1.0.1") == true)
-    assert(Updater.isNewer("1.0", "1.1") == true)
-end)
-
-test("version compare: unparsable input defaults to 'update available'", function()
     assert(Updater.isNewer(nil, "1.0.0") == true)
-    assert(Updater.isNewer("1.0.0", "garbage") == true)
 end)
 
-test("fetchLatest: real release JSON shape parsed correctly", function()
-    http_response_body, http_response_code = REAL_RELEASE_JSON, 200
+test("fetchLatest: real commits-API shape parsed into a build entry", function()
+    http_response_body, http_response_code = REAL_COMMITS_JSON, 200
     local plugin = newPlugin()
     local latest, err = Updater:fetchLatest(plugin)
-    assert(latest, err)
-    assert(latest.kind == "release")
-    assert(latest.version == "1.0.0")
-    assert(latest.tag == "v1.0.0")
-    assert(latest.zip_url == "https://api.github.com/repos/Darkgoatie/TachiKindle/zipball/v1.0.0")
-    assert(plugin.last_url:match("^https://api%.github%.com/repos/Darkgoatie/TachiKindle/releases/latest"))
-end)
-
-test("fetchLatest: falls back to commits API when releases response has no tag_name", function()
-    local calls = {}
-    local orig_httpGet = FakePlugin.httpGet
-    FakePlugin.httpGet = function(self, url)
-        table.insert(calls, url)
-        if url:match("/releases/latest") then
-            return [[{ "message": "Not Found" }]]
-        end
-        return REAL_COMMITS_JSON
-    end
-    local plugin = newPlugin()
-    local latest, err = Updater:fetchLatest(plugin)
-    FakePlugin.httpGet = orig_httpGet
     assert(latest, err)
     assert(latest.kind == "commit")
-    assert(latest.version == "2e23c3a")
-    assert(latest.sha == "2e23c3a58b8cded994715481b38e797ce7a2a1c3")
-    assert(#calls == 2 and calls[2]:match("/commits%?per_page=1"))
+    assert(latest.version == "9db004c")
+    assert(latest.sha == "9db004c55961ec0e6f3eead51ca93f91018ef29f")
+    assert(latest.zip_url == "https://github.com/Darkgoatie/TachiKindle/archive/9db004c55961ec0e6f3eead51ca93f91018ef29f.zip")
+    assert(plugin.last_url:match("/commits%?sha=test/source%-script%-format%-system&per_page=1"))
 end)
 
-test("fetchLatest: network failure on both endpoints reports a real error", function()
+test("fetchLatest: network failure reports a real error, not a crash", function()
     local orig_httpGet = FakePlugin.httpGet
     FakePlugin.httpGet = function() return nil, "connection refused" end
     local plugin = newPlugin()
@@ -151,12 +101,7 @@ end)
 
 test("fetchLatest: malformed commits response is a real error, not a crash", function()
     local orig_httpGet = FakePlugin.httpGet
-    FakePlugin.httpGet = function(self, url)
-        if url:match("/releases/latest") then
-            return [[{ "message": "Not Found" }]]
-        end
-        return [[{ "this": "is not a commit list" }]]
-    end
+    FakePlugin.httpGet = function() return [[{ "this": "is not a commit list" }]] end
     local plugin = newPlugin()
     local latest, err = Updater:fetchLatest(plugin)
     FakePlugin.httpGet = orig_httpGet
@@ -164,47 +109,47 @@ test("fetchLatest: malformed commits response is a real error, not a crash", fun
     assert(err and err:match("Unexpected response"))
 end)
 
-test("readLocalVersion/writeLocalVersion round-trip via VERSION file", function()
-    local tmp_version_path = os.tmpname()
-    local orig_versionFilePath = Updater.versionFilePath
-    Updater.versionFilePath = function() return tmp_version_path end
+test("readLocalBuild/writeLocalBuild round-trip via BUILD file", function()
+    local tmp_build_path = os.tmpname()
+    local orig_buildFilePath = Updater.buildFilePath
+    Updater.buildFilePath = function() return tmp_build_path end
 
-    local ok, err = Updater:writeLocalVersion("9.9.9")
+    local ok, err = Updater:writeLocalBuild("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
     assert(ok, err)
-    assert(Updater:readLocalVersion() == "9.9.9")
+    assert(Updater:readLocalBuild() == "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 
-    Updater.versionFilePath = orig_versionFilePath
-    os.remove(tmp_version_path)
+    Updater.buildFilePath = orig_buildFilePath
+    os.remove(tmp_build_path)
 end)
 
-test("readLocalVersion: missing VERSION file returns nil, not an error", function()
-    local orig_versionFilePath = Updater.versionFilePath
-    Updater.versionFilePath = function() return "/nonexistent/path/VERSION" end
-    assert(Updater:readLocalVersion() == nil)
-    Updater.versionFilePath = orig_versionFilePath
+test("readLocalBuild: missing BUILD file returns nil, not an error", function()
+    local orig_buildFilePath = Updater.buildFilePath
+    Updater.buildFilePath = function() return "/nonexistent/path/BUILD" end
+    assert(Updater:readLocalBuild() == nil)
+    Updater.buildFilePath = orig_buildFilePath
 end)
 
-test("checkForUpdates: no update available shows an info message, not a confirm dialog", function()
-    http_response_body, http_response_code = REAL_RELEASE_JSON, 200 -- "1.0.0"
-    local tmp_version_path = os.tmpname()
-    local vf = assert(io.open(tmp_version_path, "w")); vf:write("1.0.0"); vf:close()
-    local orig_versionFilePath = Updater.versionFilePath
-    Updater.versionFilePath = function() return tmp_version_path end
+test("checkForUpdates: matching build SHA shows an info message, not a confirm dialog", function()
+    http_response_body, http_response_code = REAL_COMMITS_JSON, 200 -- sha 9db004c5...
+    local tmp_build_path = os.tmpname()
+    local bf = assert(io.open(tmp_build_path, "w")); bf:write("9db004c55961ec0e6f3eead51ca93f91018ef29f"); bf:close()
+    local orig_buildFilePath = Updater.buildFilePath
+    Updater.buildFilePath = function() return tmp_build_path end
 
     _G.__last_shown = nil
     Updater:checkForUpdates(newPlugin())
     assert(_G.__last_shown and _G.__last_shown.text:match("up to date"))
 
-    Updater.versionFilePath = orig_versionFilePath
-    os.remove(tmp_version_path)
+    Updater.buildFilePath = orig_buildFilePath
+    os.remove(tmp_build_path)
 end)
 
-test("checkForUpdates: update available shows a confirm dialog with both actions", function()
-    http_response_body, http_response_code = REAL_RELEASE_JSON, 200 -- "1.0.0"
-    local tmp_version_path = os.tmpname()
-    local vf = assert(io.open(tmp_version_path, "w")); vf:write("0.9.0"); vf:close()
-    local orig_versionFilePath = Updater.versionFilePath
-    Updater.versionFilePath = function() return tmp_version_path end
+test("checkForUpdates: different build SHA shows a confirm dialog with both actions", function()
+    http_response_body, http_response_code = REAL_COMMITS_JSON, 200 -- sha 9db004c5...
+    local tmp_build_path = os.tmpname()
+    local bf = assert(io.open(tmp_build_path, "w")); bf:write("0000000000000000000000000000000000000"); bf:close()
+    local orig_buildFilePath = Updater.buildFilePath
+    Updater.buildFilePath = function() return tmp_build_path end
 
     _G.__last_shown = nil
     Updater:checkForUpdates(newPlugin())
@@ -212,10 +157,23 @@ test("checkForUpdates: update available shows a confirm dialog with both actions
     assert(shown and shown.buttons and #shown.buttons == 2)
     assert(shown.buttons[1][1].text == "Not now")
     assert(shown.buttons[2][1].text == "Update now")
-    assert(shown.text:match("0.9.0") and shown.text:match("1.0.0"))
+    assert(shown.text:match("0000000") and shown.text:match("9db004c"))
 
-    Updater.versionFilePath = orig_versionFilePath
-    os.remove(tmp_version_path)
+    Updater.buildFilePath = orig_buildFilePath
+    os.remove(tmp_build_path)
+end)
+
+test("checkForUpdates: missing BUILD file (fresh install) shows a confirm dialog", function()
+    http_response_body, http_response_code = REAL_COMMITS_JSON, 200
+    local orig_buildFilePath = Updater.buildFilePath
+    Updater.buildFilePath = function() return "/nonexistent/path/BUILD" end
+
+    _G.__last_shown = nil
+    Updater:checkForUpdates(newPlugin())
+    local shown = _G.__last_shown
+    assert(shown and shown.buttons and #shown.buttons == 2)
+
+    Updater.buildFilePath = orig_buildFilePath
 end)
 
 test("checkForUpdates: network failure surfaces as an info message with the error", function()

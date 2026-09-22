@@ -8,30 +8,26 @@ the separate tachikindle-sources catalog repo -- this module never
 touches that code path.
 
 == Version tracking convention ==
-A plain-text VERSION file ships at the plugin root (next to main.lua)
-containing a semver string, e.g. "1.0.0", with no leading "v" and no
-trailing newline required (trailing whitespace is trimmed on read).
-This is a NEW convention distinct from extensions/format/schema-1.0.json's
-"version_code" (a monotonic integer per-extension field on a completely
-different object, an installed source descriptor) -- reusing that name/
-shape for the plugin itself would conflate two unrelated version spaces,
-so a semver string tied to this repo's real git tags (confirmed live:
-`git tag -l` shows v1.0.0, v1.0 exist; `releases/latest` API returns
-tag_name "v1.0.0") is used instead. Bump this file (drop the leading
-"v" from the new tag) as part of cutting each new GitHub release.
+Two separate files ship at the plugin root (next to main.lua):
+  - VERSION: a human-facing semver string (e.g. "1.0.0"), bumped
+    manually for real releases; purely cosmetic now, not used for
+    update-check comparisons.
+  - BUILD: the full commit SHA from DEV_BRANCH that produced the
+    currently-installed files. This is what update checks actually
+    compare, since this project ships continuously from a dev branch
+    rather than cutting a GitHub release per change -- every push to
+    DEV_BRANCH is treated as a new "build", regardless of whether
+    VERSION was touched.
 
-== Update-check source: releases API with commits-API fallback ==
+== Update-check source: commits API on DEV_BRANCH ==
 Confirmed live via curl against the real repo:
-  GET https://api.github.com/repos/Darkgoatie/TachiKindle/releases/latest
-  -> 200, real release object, tag_name = "v1.0.0", zipball_url =
-     "https://api.github.com/repos/Darkgoatie/TachiKindle/zipball/v1.0.0"
-So this repo DOES have a real release, and the releases API is used as
-the primary source. The commits API (GET .../commits?per_page=1) was
-also confirmed live and is kept as a fallback for the (documented, not
-hypothetical-only) case where a fork/future state of this repo has no
-releases -- in that case we compare against the short commit SHA
-instead of a semver string, and any SHA mismatch is treated as
-"update available" since commits aren't ordered by semver.
+  GET https://api.github.com/repos/Darkgoatie/TachiKindle/commits?sha=test/source-script-format-system&per_page=1
+  -> 200, real commit object with a real "sha" field.
+This is the sole update-check source now (a prior release-tag-based
+check was removed: the repo's actual GitHub Releases are cut
+infrequently from `main` and had drifted far behind DEV_BRANCH, so
+comparing against them made the updater report "up to date" even
+when DEV_BRANCH -- where all real work happens -- had moved on).
 
 == Apply-update mechanism: real zip extraction via ffi/archiver ==
 Confirmed by reading a local reference KOReader checkout
@@ -80,8 +76,7 @@ local util = require("util")
 local lfs = require("libs/libkoreader-lfs")
 local _ = require("gettext")
 
-local RELEASES_LATEST_URL = "https://api.github.com/repos/Darkgoatie/TachiKindle/releases/latest"
-local COMMITS_URL = "https://api.github.com/repos/Darkgoatie/TachiKindle/commits?per_page=1"
+local COMMITS_URL = "https://api.github.com/repos/Darkgoatie/TachiKindle/commits?sha=test/source-script-format-system&per_page=1"
 local DEV_BRANCH = "test/source-script-format-system"
 
 local TachiKindleUpdater = {}
@@ -98,6 +93,31 @@ end
 
 function TachiKindleUpdater.versionFilePath()
     return TachiKindleUpdater.pluginDir() .. "/VERSION"
+end
+
+-- Separate from VERSION (a human-facing semver string that's bumped
+-- manually, e.g. for a real release). BUILD tracks the actual
+-- installed commit SHA from DEV_BRANCH, since every push is treated
+-- as a build regardless of whether VERSION was touched.
+function TachiKindleUpdater.buildFilePath()
+    return TachiKindleUpdater.pluginDir() .. "/BUILD"
+end
+
+function TachiKindleUpdater:readLocalBuild()
+    local f = io.open(self.buildFilePath(), "r")
+    if not f then return nil end
+    local v = f:read("*a")
+    f:close()
+    if not v then return nil end
+    return v:gsub("%s+$", ""):gsub("^%s+", "")
+end
+
+function TachiKindleUpdater:writeLocalBuild(sha)
+    local f = io.open(self.buildFilePath(), "w")
+    if not f then return false, _("Could not write BUILD file") end
+    f:write(tostring(sha) .. "\n")
+    f:close()
+    return true
 end
 
 -- Read the locally-installed version marker. Returns a trimmed
@@ -155,32 +175,17 @@ function TachiKindleUpdater.isNewer(current, latest)
     return false
 end
 
--- Fetch the latest release; falls back to the commits API if this
--- repo (or a fork of it) has no releases yet (confirmed 404 shape:
--- {"message":"Not Found",...}). Returns a table:
---   { kind = "release", version = "1.0.0", tag = "v1.0.0", zip_url = ... }
--- or { kind = "commit", version = "<7-char sha>", zip_url = ... }
--- or nil, err_message.
+-- Fetch the latest build. "Build" == latest commit on DEV_BRANCH: every
+-- push is a build, regardless of whether VERSION or a release tag was
+-- bumped. Returns a table:
+--   { kind = "commit", version = "<7-char sha>", sha = "<full sha>", zip_url = ... }
+-- or nil, err_message. (A real GitHub release, if one exists, is not
+-- consulted here anymore -- see module comment for why build-per-commit
+-- was chosen over release-per-version for this project's workflow.)
 function TachiKindleUpdater:fetchLatest(plugin)
-    local body, err = plugin:httpGet(RELEASES_LATEST_URL)
-    if body then
-        local ok, parsed = pcall(JSON.decode, body)
-        if ok and type(parsed) == "table" and parsed.tag_name then
-            return {
-                kind = "release",
-                version = tostring(parsed.tag_name):gsub("^v", ""),
-                tag = parsed.tag_name,
-                zip_url = parsed.zipball_url
-                    or ("https://github.com/Darkgoatie/TachiKindle/archive/refs/tags/" .. parsed.tag_name .. ".zip"),
-            }
-        end
-        -- Valid HTTP 200 but not a release object (e.g. {"message":"Not Found"})
-        -- -- fall through to the commits API below.
-    end
-
     local commits_body, commits_err = plugin:httpGet(COMMITS_URL)
     if not commits_body then
-        return nil, err or commits_err or _("Network error while checking for updates")
+        return nil, commits_err or _("Network error while checking for updates")
     end
     local ok, parsed = pcall(JSON.decode, commits_body)
     if not ok or type(parsed) ~= "table" or not parsed[1] or not parsed[1].sha then
@@ -208,29 +213,20 @@ function TachiKindleUpdater:checkForUpdates(plugin)
         return
     end
 
-    local current = self:readLocalVersion()
-    local update_available
-    if latest.kind == "release" then
-        update_available = self.isNewer(current, latest.version)
-    else
-        -- Commit-SHA comparisons aren't ordered; any difference (or
-        -- unknown current version) counts as "available".
-        update_available = (current == nil) or (current ~= latest.version)
-    end
+    local current_build = self:readLocalBuild()
+    local update_available = (current_build == nil) or (current_build ~= latest.sha)
 
     if not update_available then
         UIManager:show(InfoMessage:new{
-            text = _("TachiKindle is up to date (") .. tostring(current or "?") .. ")",
+            text = _("TachiKindle is up to date (build ") .. tostring(latest.version) .. ")",
             timeout = 2,
         })
         return
     end
 
     local dialog
-    local current_label = current or _("unknown")
-    local latest_label = latest.kind == "release"
-        and (_("v") .. latest.version)
-        or (_("commit ") .. latest.version)
+    local current_label = current_build and current_build:sub(1, 7) or _("unknown")
+    local latest_label = latest.version
     dialog = ButtonDialog:new{
         title = _("Update available"),
         title_align = "center",
@@ -250,7 +246,7 @@ function TachiKindleUpdater:checkForUpdates(plugin)
             }},
         },
         text = string.format(
-            _("A new version of TachiKindle is available.\n\nInstalled: %s\nAvailable: %s\n\nUpdating will replace the plugin's own files. Your settings and downloaded sources are not affected. KOReader must be restarted afterwards."),
+            _("A new build of TachiKindle is available.\n\nInstalled build: %s\nAvailable build: %s\n\nUpdating will replace the plugin's own files. Your settings and downloaded sources are not affected. KOReader must be restarted afterwards."),
             tostring(current_label), tostring(latest_label)
         ),
     }
@@ -355,7 +351,7 @@ function TachiKindleUpdater:applyUpdate(plugin, latest)
         return
     end
 
-    self:writeLocalVersion(latest.version)
+    self:writeLocalBuild(latest.sha)
 
     UIManager:show(InfoMessage:new{
         text = _("TachiKindle updated successfully. Please restart KOReader to load the new version."),
