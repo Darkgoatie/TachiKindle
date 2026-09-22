@@ -62,5 +62,16 @@
       "options": [ ["", "Any"], ["end", "Completed"], ["on-going", "Ongoing"], ["canceled", "Cancelled"], ["on-hold", "On Hold"] ] }
   ],
 
-  "update_strategy": "ALWAYS_UPDATE"
+  "update_strategy": "ALWAYS_UPDATE",
+
+  "verification": {
+    "fixture_tests": "tests/test_toonily_selectors.lua",
+    "live_metadata": "2026-09-22: plain HTTP GET (curl, no JS execution -- same request shape KOReader's runtime makes) to https://toonily.com/webtoons?m_orderby=views returned HTTP 403, Cloudflare 'Just a moment...' challenge page. Earlier same-day verification used a JS-capable browser/extractor tool that cleared the challenge, which is not representative of the plugin's actual plain-HTTP runtime -- re-checked with a bare request and it is blocked.",
+    "status": "fixture-tested; live-blocked"
+  },
+
+  "limitations": [
+    "Cloudflare JS challenge ('Just a moment...') blocks every plain HTTP request observed 2026-09-22, including the base listing endpoint. KOReader has no JS engine/WebView equivalent to solve this, so this source currently returns no manga list, no chapters, and no page images on-device.",
+    "Same class of blocker as en.batcave (see its verification.status) -- no DLE Guard / Cloudflare challenge solver is ported."
+  ]
 }
